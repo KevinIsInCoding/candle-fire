@@ -23,44 +23,57 @@ def _configure_entrez() -> None:
 
 
 def _sleep() -> None:
+    # NCBI rate limit: 10 req/s with API key, 3 req/s without
     time.sleep(0.1 if os.getenv("NCBI_API_KEY") else 0.4)
 
 
 def get_pmcids(pmids: list[str]) -> dict[str, str]:
     """
     Map PubMed IDs to PMC IDs for papers with Open Access full text.
+    Sends one PMID at a time — batch elink merges all results into one
+    LinkSet with no per-ID mapping, making it unusable for this purpose.
     Returns {pmid: pmcid}.
     """
     _configure_entrez()
     if not pmids:
         return {}
 
+    from rich.progress import Progress, SpinnerColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn, TextColumn
     result: dict[str, str] = {}
-    for i in range(0, len(pmids), 200):
-        batch = pmids[i : i + 200]
-        for attempt in range(3):
-            try:
-                handle = Entrez.elink(dbfrom="pubmed", db="pmc", id=",".join(batch))
-                link_sets = Entrez.read(handle)
-                handle.close()
-                break
-            except Exception as exc:
-                if attempt == 2:
-                    _logger.warning(f"elink failed: {exc}")
-                    link_sets = []
-                    break
-                time.sleep(2 ** attempt)
 
-        for link_set in link_sets:
-            source_ids = link_set.get("IdList", [])
-            source_id = str(source_ids[0]) if source_ids else None
-            for db_link in link_set.get("LinkSetDb", []):
-                if db_link.get("DbTo") == "pmc":
-                    links = db_link.get("Link", [])
-                    if links and source_id:
-                        result[source_id] = str(links[0]["Id"])
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+    ) as progress:
+        task = progress.add_task("Looking up PMC IDs...", total=len(pmids))
+
+        for pmid in pmids:
+            for attempt in range(3):
+                try:
+                    handle = Entrez.elink(dbfrom="pubmed", db="pmc", id=pmid)
+                    link_sets = Entrez.read(handle)
+                    handle.close()
                     break
-        _sleep()
+                except Exception as exc:
+                    if attempt == 2:
+                        _logger.debug(f"elink failed for PMID {pmid}: {exc}")
+                        link_sets = []
+                        break
+                    time.sleep(2 ** attempt)
+
+            for ls in link_sets:
+                for db_link in ls.get("LinkSetDb", []):
+                    if db_link.get("DbTo") == "pmc":
+                        links = db_link.get("Link", [])
+                        if links:
+                            result[pmid] = str(links[0]["Id"])
+                        break
+
+            _sleep()
+            progress.advance(task)
 
     _logger.info("PMC ID lookup", extra={"data": {"pmids": len(pmids), "found": len(result)}})
     return result
