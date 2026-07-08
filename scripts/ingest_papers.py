@@ -69,9 +69,8 @@ def main() -> None:
 
     # Step 3: Enrich with PMC full text
     if not args.skip_fulltext:
-        console.print("[cyan]Looking up PMC IDs for Open Access full text...[/cyan]")
         all_pmids = [p.pmid for p in papers]
-        pmcid_map = pmc.get_pmcids(all_pmids)
+        pmcid_map = pmc.get_pmcids(all_pmids)  # shows its own progress bar
         console.print(f"[green]{len(pmcid_map)} papers have PMC full text available[/green]")
 
         pmid_to_paper = {p.pmid: p for p in papers}
