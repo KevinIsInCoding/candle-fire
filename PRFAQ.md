@@ -10,7 +10,7 @@
 
 *New AI-powered tool synthesizes 500+ peer-reviewed ALS papers and live clinical trial data into a single research landscape report, grounded in a biomedical knowledge graph*
 
-**New York, NY** — Today, the team behind Beacon announced the launch of Candle-Fire, a research intelligence platform that helps physicians evaluating ALS (amyotrophic lateral sclerosis) clinical trials understand the full scientific context behind a trial's mechanism; to help researcher to understand the disease pathology and existing experiment in order to better locate disease target.
+**New York, NY** — 12/30/2026 Today, the team behind Beacon announced the launch of Candle-Fire, a research intelligence platform that helps physicians evaluating ALS (amyotrophic lateral sclerosis) clinical trials understand the full scientific context behind a trial's mechanism; to help researcher to understand the disease pathology and existing experiment in order to better locate disease target.
 
 ALS is one of the most aggressive and least understood neurodegenerative diseases. With over 100 active clinical trials testing targets ranging from SOD1 gene silencing to neuroinflammation modulators, physicians face a mounting challenge: how do you evaluate a trial's scientific credibility when the evidence base spans thousands of papers across genetics, cell biology, and clinical pharmacology?
 
