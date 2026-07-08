@@ -10,7 +10,7 @@
 
 *New AI-powered tool synthesizes 500+ peer-reviewed ALS papers and live clinical trial data into a single research landscape report, grounded in a biomedical knowledge graph*
 
-**San Francisco, CA** — Today, the team behind Beacon announced the launch of Candle-Fire, a research intelligence platform that helps physicians evaluating ALS (amyotrophic lateral sclerosis) clinical trials understand the full scientific context behind a trial's mechanism — in under 30 seconds.
+**New York, NY** — Today, the team behind Beacon announced the launch of Candle-Fire, a research intelligence platform that helps physicians evaluating ALS (amyotrophic lateral sclerosis) clinical trials understand the full scientific context behind a trial's mechanism; to help researcher to understand the disease pathology and existing experiment in order to better locate disease target.
 
 ALS is one of the most aggressive and least understood neurodegenerative diseases. With over 100 active clinical trials testing targets ranging from SOD1 gene silencing to neuroinflammation modulators, physicians face a mounting challenge: how do you evaluate a trial's scientific credibility when the evidence base spans thousands of papers across genetics, cell biology, and clinical pharmacology?
 
@@ -95,7 +95,13 @@ A: Yes. Candle-Fire is open-source (MIT License) and the hosted version on Huggi
 
 **Q: Why ALS specifically? Why not all neurodegenerative diseases?**
 
-A: ALS has a few properties that make it an ideal starting point. The disease has a well-defined and relatively small set of causal genes (SOD1, TARDBP, FUS, C9orf72 account for the majority of familial cases), making the knowledge graph tractable to seed manually. The research community is active — over 100 recruiting trials at any given time — creating real physician demand for synthesis. And Beacon, our sibling project, already serves ALS patients finding trials, so physician-facing research tooling is a natural complement.
+A: Three reasons, and none of them are about the genetics being simple — because they are not.
+
+**An active but under-resourced research frontier.** ALS is a disease where the research community is working hard but pharmaceutical investment lags far behind. Over 100 clinical trials are recruiting at any given time, yet only two drugs (riluzole, edaravone) have reached broad approval in decades. That gap between scientific activity and clinical translation is exactly where better research synthesis tools create value — helping physicians and researchers navigate a crowded and fast-moving evidence base without deep institutional resources.
+
+**A cruel and fast disease that demands urgency.** ALS is uniformly fatal, typically within 2–5 years of symptom onset, with no disease-modifying cure. Patients deteriorate rapidly. Physicians evaluating trial options for a patient diagnosed today do not have months to conduct literature review — they need synthesis now. The disease's brutality is the strongest argument for tools that compress hours of work into seconds.
+
+**Scientific complexity that rewards structured intelligence.** Contrary to a common misconception, 90% of ALS cases are sporadic — no identified genetic cause. Only ~10% are familial, and within that group, SOD1, TARDBP, FUS, and C9orf72 are the primary genes. The vast majority of patients have ALS arising from an incompletely understood convergence of genetic susceptibility, environmental exposure, and cellular stress mechanisms. This is precisely why a knowledge graph that maps pathological mechanisms, not just genes, is valuable. The biology that connects protein aggregation, neuroinflammation, oxidative stress, and RNA dysregulation is the real frontier — and that frontier is too complex to navigate by keyword search alone.
 
 The architecture generalizes: replacing the ALS paper corpus with a Parkinson's or Alzheimer's corpus requires only re-running the ingestion and extraction pipeline with a different PubMed query. ALS is the pilot, not the ceiling.
 
