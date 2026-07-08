@@ -13,7 +13,9 @@ from models import ALSPaper
 
 _logger = get_logger("rag.indexer")
 
-_EMBED_FN = SentenceTransformerEmbeddingFunction(model_name="all-MiniLM-L6-v2")
+# BioLORD-2023-C: anchored to UMLS/SNOMED CT/MeSH ontologies — natively understands
+# biomedical synonyms (TARDBP = TDP-43, SOD1 = superoxide dismutase) and clinical phrasing.
+_EMBED_FN = SentenceTransformerEmbeddingFunction(model_name="FremyCompany/BioLORD-2023-C")
 
 
 def _chunk_paper(paper: ALSPaper) -> list[dict]:
