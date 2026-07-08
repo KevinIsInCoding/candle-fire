@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "properties": {
+    "query_entities": {
+      "type": "array",
+      "description": "Genes, proteins, compounds, pathways, mechanisms, or phenotypes identified in the physician's question. Include all specific biological terms mentioned.",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "query_text": {
+      "type": "string",
+      "description": "The original physician question, used verbatim for semantic vector search."
+    }
+  },
+  "required": ["query_entities", "query_text"]
+}

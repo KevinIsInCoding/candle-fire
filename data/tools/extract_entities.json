@@ -1,0 +1,67 @@
+{
+  "type": "object",
+  "properties": {
+    "pmid": {
+      "type": "string",
+      "description": "The PubMed ID of the paper being analyzed."
+    },
+    "entities": {
+      "type": "array",
+      "description": "Biomedical entities identified in the abstract.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["Gene", "Protein", "Compound", "Pathway", "Phenotype", "Mechanism"],
+            "description": "Category of the biomedical entity."
+          },
+          "name": {
+            "type": "string",
+            "description": "Exact name as it appears in the text."
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "Confidence that this is correctly identified (1.0 = unambiguous)."
+          },
+          "mentions": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of times this entity is mentioned in the abstract."
+          }
+        },
+        "required": ["type", "name", "confidence", "mentions"]
+      }
+    },
+    "relationships": {
+      "type": "array",
+      "description": "Relationships between entities identified in the abstract.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "Name of the source entity (must match an entity in the entities list)."
+          },
+          "target": {
+            "type": "string",
+            "description": "Name of the target entity (must match an entity in the entities list)."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["BINDS", "INHIBITS", "ASSOCIATED_WITH", "TESTED_IN", "EXPRESSED_IN", "CO_OCCURS"],
+            "description": "Type of relationship between source and target."
+          },
+          "evidence_text": {
+            "type": "string",
+            "description": "Brief excerpt from the abstract that supports this relationship."
+          }
+        },
+        "required": ["source", "target", "type", "evidence_text"]
+      }
+    }
+  },
+  "required": ["pmid", "entities", "relationships"]
+}
