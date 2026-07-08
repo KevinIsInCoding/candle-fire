@@ -6,8 +6,10 @@ from collections.abc import Generator
 
 import anthropic
 import chromadb
+import networkx as nx
 
 from config import SYNTHESIS_MODEL
+from graph import query as kg_query
 from llm import cached_system, cached_tools
 from logging_config import get_logger
 from prompts import SYNTHESIS_SYSTEM
@@ -22,6 +24,7 @@ def stream_research_agent(
     query: str,
     collection: chromadb.Collection,
     trials: list[dict],
+    graph: nx.DiGraph | None = None,
 ) -> Generator[tuple[str, str], None, None]:
     """
     Stream the ALS research synthesis agent.
@@ -34,6 +37,8 @@ def stream_research_agent(
     messages: list[anthropic.types.MessageParam] = [
         {"role": "user", "content": query}
     ]
+    # Attach graph reference so _handle_search can use KG expansion
+    _graph = graph
 
     while True:
         stream_text = ""
@@ -91,7 +96,7 @@ def stream_research_agent(
 
             for tool_call in tool_calls:
                 if tool_call["name"] == "search_research_landscape":
-                    result = _handle_search(tool_call["input"], collection, trials)
+                    result = _handle_search(tool_call["input"], collection, trials, _graph)
                     is_error = False
                 else:
                     result = {"error": f"Unknown tool: {tool_call['name']}"}
@@ -114,16 +119,24 @@ def _handle_search(
     tool_input: dict,
     collection: chromadb.Collection,
     trials: list[dict],
+    graph: nx.DiGraph | None = None,
 ) -> dict:
-    """Execute RAG search + trial lookup and return structured context for Claude."""
+    """Execute KG expansion → RAG search → trial lookup and return structured context."""
     query_text = tool_input.get("query_text", "")
     query_entities = tool_input.get("query_entities", [])
 
-    # Semantic search
+    # Step 1: KG expansion — surface related entities Claude didn't name explicitly
+    # e.g. "tofersen" → expands to ["SOD1", "antisense oligonucleotide", "RNA splicing"]
+    if graph and query_entities:
+        expanded_entities = kg_query.expand_query_entities(graph, query_entities)
+    else:
+        expanded_entities = query_entities
+
+    # Step 2: RAG — semantic search on query text
     semantic_results = rag_retriever.search(collection, query_text, n_results=10)
 
-    # Entity-targeted search (finds papers even if query terms don't match directly)
-    entity_results = rag_retriever.search_by_entities(collection, query_entities, n_results=15)
+    # Step 3: Entity-targeted RAG using expanded entity set
+    entity_results = rag_retriever.search_by_entities(collection, expanded_entities, n_results=15)
 
     # Merge by PMID — keep best score per paper
     seen: dict[str, dict] = {}
@@ -135,19 +148,24 @@ def _handle_search(
     top_papers = sorted(seen.values(), key=lambda x: x["score"], reverse=True)[:15]
 
     _logger.info(
-        "RAG search",
+        "KG+RAG search",
         extra={"data": {
             "query_entities": query_entities,
+            "expanded_entities": len(expanded_entities),
             "semantic_hits": len(semantic_results),
             "entity_hits": len(entity_results),
             "merged": len(top_papers),
+            "kg_active": graph is not None,
         }},
     )
 
-    # Match trials by entity name in title or intervention text
-    related_trials = []
-    if query_entities:
-        entities_lower = [e.lower() for e in query_entities]
+    # Step 4: Trial matching — prefer KG-linked trials, fall back to text match
+    related_trials: list[dict] = []
+    if graph and query_entities:
+        related_trials = kg_query.find_trials_for_entities(graph, expanded_entities, max_trials=5)
+
+    if not related_trials and query_entities:
+        entities_lower = [e.lower() for e in expanded_entities]
         for trial in trials:
             iv_names = " ".join(iv.get("name", "") for iv in trial.get("interventions", []))
             trial_text = f"{trial.get('title', '')} {iv_names}".lower()
@@ -177,6 +195,8 @@ def _handle_search(
             for r in top_papers
         ],
         "query_entities": query_entities,
+        "expanded_entities": expanded_entities,
         "trials": related_trials,
         "evidence_count": len(top_papers),
+        "kg_expansion_active": graph is not None,
     }
