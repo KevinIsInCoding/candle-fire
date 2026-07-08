@@ -14,7 +14,7 @@ import anthropic
 from rich.console import Console
 
 from agents.research_agent import stream_research_agent
-from config import CHROMA_COLLECTION, CHROMA_DIR, TRIALS_PATH
+from config import CHROMA_COLLECTION, CHROMA_DIR, GRAPH_PICKLE_PATH, TRIALS_PATH
 
 console = Console()
 
@@ -33,6 +33,14 @@ def _load_trials() -> list[dict]:
         return [json.loads(line) for line in f if line.strip()]
 
 
+def _load_graph():
+    try:
+        from graph.serializer import load_graph
+        return load_graph(GRAPH_PICKLE_PATH)
+    except FileNotFoundError:
+        return None
+
+
 def main() -> None:
     from rag.indexer import load_collection
 
@@ -47,12 +55,14 @@ def main() -> None:
         console.print("[yellow]Run: uv run python scripts/build_index.py[/yellow]")
         sys.exit(1)
 
+    graph = _load_graph()
     trials = _load_trials()
     client = anthropic.Anthropic()
 
     n_chunks = collection.count()
+    kg_status = f"{graph.number_of_nodes()} KG nodes" if graph else "no KG (run build_graph.py)"
     console.print(
-        f"[green]Ready.[/green] {n_chunks} chunks indexed · {len(trials)} trials loaded.{' ' * 20}"
+        f"[green]Ready.[/green] {n_chunks} chunks · {len(trials)} trials · {kg_status}.{' ' * 10}"
     )
 
     if not query:
@@ -70,7 +80,7 @@ def main() -> None:
 
     console.print()
 
-    for event_type, content in stream_research_agent(client, query, collection, trials):
+    for event_type, content in stream_research_agent(client, query, collection, trials, graph=graph):
         if event_type == "status":
             console.print(f"[dim italic]{content}[/dim italic]")
         elif event_type == "token":
