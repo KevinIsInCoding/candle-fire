@@ -129,7 +129,7 @@ with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
             height=520,
             show_label=False,
             sanitize_html=False,
-            avatar_images=(None, "https://api.dicebear.com/7.x/icons/svg?seed=candle&icon=flame"),
+            avatar_images=(None, "assets/flame.svg"),
             placeholder="Ask a question about ALS research to get started.",
         )
 

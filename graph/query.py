@@ -72,12 +72,19 @@ def expand_query_entities(
     return display_names
 
 
+_STATUS_RANK = {"RECRUITING": 0, "ACTIVE_NOT_RECRUITING": 1, "NOT_YET_RECRUITING": 2, "COMPLETED": 3}
+
+
 def find_trials_for_entities(
     G: nx.DiGraph,
     entity_names: list[str],
-    max_trials: int = 5,
+    max_trials: int = 10,
 ) -> list[dict]:
-    """Return clinical trials linked to the given entity names."""
+    """Return clinical trials linked to the given entity names.
+
+    Collects all matches, scores by number of linked entities, sorts by
+    status (RECRUITING first) then score, and returns the top max_trials.
+    """
     if not G or not entity_names:
         return []
 
@@ -86,31 +93,37 @@ def find_trials_for_entities(
         matched = _find_node(G, name)
         target_nodes.update(matched)
 
-    trials: list[dict] = []
-    seen: set[str] = set()
+    # score[nct_id] = number of query entities this trial links to
+    scores: dict[str, int] = {}
+    meta: dict[str, dict] = {}
 
     for node_id in target_nodes:
-        # Trials point TO their targets, so look at predecessors
         for pred in G.predecessors(node_id):
             if not pred.startswith("trial:"):
                 continue
             nct_id = G.nodes[pred].get("nct_id", "")
-            if nct_id in seen:
+            if not nct_id:
                 continue
-            seen.add(nct_id)
-            trials.append({
-                "nct_id": nct_id,
-                "title": G.nodes[pred].get("display_name", ""),
-                "phase": G.nodes[pred].get("phase", ""),
-                "status": G.nodes[pred].get("status", ""),
-                "url": G.nodes[pred].get("url", ""),
-            })
-            if len(trials) >= max_trials:
-                break
-        if len(trials) >= max_trials:
-            break
+            scores[nct_id] = scores.get(nct_id, 0) + 1
+            if nct_id not in meta:
+                status = G.nodes[pred].get("status", "")
+                meta[nct_id] = {
+                    "nct_id": nct_id,
+                    "title": G.nodes[pred].get("display_name", ""),
+                    "phase": G.nodes[pred].get("phase", ""),
+                    "status": status,
+                    "url": G.nodes[pred].get("url", ""),
+                    "_status_rank": _STATUS_RANK.get(status, 9),
+                }
 
-    return trials
+    ranked = sorted(
+        meta.values(),
+        key=lambda t: (t["_status_rank"], -scores[t["nct_id"]]),
+    )
+    for t in ranked:
+        del t["_status_rank"]
+
+    return ranked[:max_trials]
 
 
 def get_entity_evidence(G: nx.DiGraph, canonical_id: str) -> dict:

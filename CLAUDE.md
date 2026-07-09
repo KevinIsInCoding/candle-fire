@@ -59,6 +59,9 @@ uv run python scripts/build_graph.py
 
 # 5. Build ChromaDB vector index
 uv run python scripts/build_index.py
+
+# 6. run application
+uv run gradio app.py
 ```
 
 ## Key Invariants

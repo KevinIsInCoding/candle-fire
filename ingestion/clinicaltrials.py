@@ -1,47 +1,42 @@
 """ClinicalTrials.gov v2 client for ALS trials (adapted from beacon/trials_api.py)."""
 from __future__ import annotations
 
-import re
 import time
+from typing import TYPE_CHECKING
 
 import httpx
 
-from config import CTGOV_BASE
+from config import CTGOV_BASE, EXTRACTION_MODEL
 from logging_config import get_logger
+
+if TYPE_CHECKING:
+    import anthropic
 
 _logger = get_logger("ingestion.clinicaltrials")
 
-# Known ALS-relevant targets for heuristic entity linking
-_KNOWN_TARGETS: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"\bSOD1\b", re.IGNORECASE), "SOD1"),
-    (re.compile(r"\bTARDBP\b", re.IGNORECASE), "TARDBP"),
-    (re.compile(r"\bTDP-?43\b", re.IGNORECASE), "TARDBP"),
-    (re.compile(r"\bFUS\b", re.IGNORECASE), "FUS"),
-    (re.compile(r"\bC9orf72\b", re.IGNORECASE), "C9orf72"),
-    (re.compile(r"\bATXN2\b", re.IGNORECASE), "ATXN2"),
-    (re.compile(r"\bTBK1\b", re.IGNORECASE), "TBK1"),
-    (re.compile(r"\bNEK1\b", re.IGNORECASE), "NEK1"),
-    (re.compile(r"\bVCP\b", re.IGNORECASE), "VCP"),
-    (re.compile(r"\briluzole\b", re.IGNORECASE), "riluzole"),
-    (re.compile(r"\bedaravone\b", re.IGNORECASE), "edaravone"),
-    (re.compile(r"\btofersen\b", re.IGNORECASE), "tofersen"),
-    (re.compile(r"\bAMX0035\b", re.IGNORECASE), "AMX0035"),
-    (re.compile(r"\bmasitinib\b", re.IGNORECASE), "masitinib"),
-    (re.compile(r"\bbosutinib\b", re.IGNORECASE), "bosutinib"),
-    (re.compile(r"\bmexiletine\b", re.IGNORECASE), "mexiletine"),
-    (re.compile(r"\bantisense oligonucleotide\b", re.IGNORECASE), "antisense oligonucleotide"),
-    (re.compile(r"\bASO\b"), "antisense oligonucleotide"),
-    (re.compile(r"\bsiRNA\b", re.IGNORECASE), "siRNA"),
-    (re.compile(r"\bstem cell\b", re.IGNORECASE), "stem cell"),
-    (re.compile(r"\bgene therapy\b", re.IGNORECASE), "gene therapy"),
-]
+_TRIAL_BATCH_SIZE = 10
+
+_TRIAL_EXTRACTION_SYSTEM = """You are a biomedical NLP expert specializing in ALS (amyotrophic lateral sclerosis) clinical trials.
+
+For each trial provided, identify the primary biological target(s) being tested or modulated:
+- Genes silenced or corrected (e.g., SOD1, TARDBP, FUS, C9orf72, NEK1, VCP, TBK1)
+- Proteins targeted (use canonical gene symbol, e.g. TARDBP for TDP-43 protein)
+- Compounds/drugs — report the molecular or pathway target, not the drug name (e.g., a trial of AMX0114 targets TARDBP)
+- Mechanisms (e.g., neuroinflammation, oxidative stress, glutamate excitotoxicity)
+
+Call extract_trial_targets once per trial. Return an empty targets list only when no specific molecular or mechanistic target is identifiable."""
 
 
-def fetch_als_trials(status: str = "RECRUITING") -> list[dict]:
+def fetch_als_trials(
+    status: str | list[str] = ("RECRUITING", "NOT_YET_RECRUITING", "ACTIVE_NOT_RECRUITING"),
+    client: "anthropic.Anthropic | None" = None,
+) -> list[dict]:
     """Fetch ALS interventional trials. Returns flat dicts ready for JSONL serialization."""
+    status_filter = ",".join(status) if isinstance(status, (list, tuple)) else status
+
     params: dict[str, str | int] = {
         "query.cond": "Amyotrophic Lateral Sclerosis",
-        "filter.overallStatus": status,
+        "filter.overallStatus": status_filter,
         "aggFilters": "studyType:int",
         "pageSize": 1000,
         "format": "json",
@@ -58,9 +53,8 @@ def fetch_als_trials(status: str = "RECRUITING") -> list[dict]:
             except httpx.HTTPError as exc:
                 if attempt == 2:
                     raise
-                wait = 2 ** attempt
                 _logger.warning(f"ClinicalTrials.gov error (attempt {attempt + 1}): {exc}")
-                time.sleep(wait)
+                time.sleep(2 ** attempt)
 
         page_studies = body.get("studies", [])
         all_studies.extend(page_studies)
@@ -74,6 +68,10 @@ def fetch_als_trials(status: str = "RECRUITING") -> list[dict]:
         params["pageToken"] = next_token
 
     trials = [_flatten_trial(s) for s in all_studies]
+
+    if client is not None:
+        _enrich_targets_llm(trials, client)
+
     _logger.info("ALS trial fetch complete", extra={"data": {"total": len(trials)}})
     return trials
 
@@ -88,16 +86,14 @@ def _flatten_trial(study: dict) -> dict:
     status_mod = proto.get("statusModule", {})
 
     nct_id = id_mod.get("nctId", "")
-    title = id_mod.get("briefTitle", "")
     interventions = [
         {"type": iv.get("type", ""), "name": iv.get("name", "")}
         for iv in arms_mod.get("interventions", [])
     ]
-    intervention_names = " ".join(iv["name"] for iv in interventions)
 
     return {
         "nct_id": nct_id,
-        "title": title,
+        "title": id_mod.get("briefTitle", ""),
         "phase": ", ".join(design_mod.get("phases", [])) or "N/A",
         "status": status_mod.get("overallStatus", ""),
         "sponsor": sponsor_mod.get("leadSponsor", {}).get("name", ""),
@@ -105,14 +101,93 @@ def _flatten_trial(study: dict) -> dict:
         "interventions": interventions,
         "start_date": status_mod.get("startDateStruct", {}).get("date", ""),
         "url": f"https://clinicaltrials.gov/study/{nct_id}" if nct_id else "",
-        "target_entities": extract_target_entities(f"{title} {intervention_names}"),
+        "target_entities": [],
     }
 
 
-def extract_target_entities(text: str) -> list[str]:
-    """Scan text for known ALS target names. Returns sorted canonical entity names."""
-    found: set[str] = set()
-    for pattern, canonical in _KNOWN_TARGETS:
-        if pattern.search(text):
-            found.add(canonical)
-    return sorted(found)
+def _enrich_targets_llm(trials: list[dict], client: "anthropic.Anthropic") -> None:
+    """Call Claude in batches to extract biological targets; mutates each trial in-place."""
+    from extraction.normalizer import normalize_entity
+    from tools import TRIAL_EXTRACTION_TOOLS
+
+    from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn, TimeRemainingColumn
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+    ) as progress:
+        task = progress.add_task("Extracting trial targets (LLM)...", total=len(trials))
+
+        for i in range(0, len(trials), _TRIAL_BATCH_SIZE):
+            batch = trials[i : i + _TRIAL_BATCH_SIZE]
+            results = _call_claude_batch(client, batch, TRIAL_EXTRACTION_TOOLS)
+
+            for nct_id, raw_targets in results.items():
+                trial = next((t for t in batch if t["nct_id"] == nct_id), None)
+                if trial is None:
+                    continue
+                canonical: list[str] = []
+                for t in raw_targets:
+                    if t.get("confidence", 0) < 0.5:
+                        continue
+                    canon_id = normalize_entity(t["name"], t["type"])
+                    # strip prefix (e.g. "protein:TARDBP" → "TARDBP")
+                    canon_name = canon_id.split(":", 1)[-1]
+                    if canon_name and canon_name not in canonical:
+                        canonical.append(canon_name)
+                trial["target_entities"] = canonical
+
+            progress.advance(task, len(batch))
+
+            if i + _TRIAL_BATCH_SIZE < len(trials):
+                time.sleep(1.0)
+
+
+def _call_claude_batch(
+    client: "anthropic.Anthropic",
+    batch: list[dict],
+    tools: list,
+) -> dict[str, list[dict]]:
+    """Send one batch of trials to Claude; return {nct_id: [target dicts]}."""
+    lines = [
+        f"Extract targets from each of the following {len(batch)} ALS clinical trials. "
+        "Call extract_trial_targets once per trial.\n"
+    ]
+    for trial in batch:
+        iv_names = ", ".join(iv["name"] for iv in trial.get("interventions", [])) or "N/A"
+        summary = (trial.get("summary") or "")[:400]
+        lines.append(
+            f"--- NCT: {trial['nct_id']} ---\n"
+            f"Title: {trial['title']}\n"
+            f"Interventions: {iv_names}\n"
+            f"Summary: {summary}\n"
+        )
+
+    for attempt in range(3):
+        try:
+            response = client.messages.create(
+                model=EXTRACTION_MODEL,
+                max_tokens=4096,
+                system=_TRIAL_EXTRACTION_SYSTEM,
+                tools=tools,
+                tool_choice={"type": "any"},
+                messages=[{"role": "user", "content": "\n".join(lines)}],
+            )
+            break
+        except Exception as exc:
+            if attempt == 2:
+                _logger.warning(f"Claude trial extraction failed: {exc}")
+                return {}
+            time.sleep(30 if "rate" in str(exc).lower() else 2 ** attempt)
+
+    results: dict[str, list[dict]] = {}
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "extract_trial_targets":
+            nct_id = block.input.get("nct_id", "")
+            if nct_id:
+                results[nct_id] = block.input.get("targets", [])
+
+    return results

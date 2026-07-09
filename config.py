@@ -2,7 +2,7 @@ from pathlib import Path
 
 # Models
 SYNTHESIS_MODEL = "claude-sonnet-4-6"
-EXTRACTION_MODEL = "claude-sonnet-4-6"
+EXTRACTION_MODEL = "claude-haiku-4-5-20251001"
 
 # External API endpoints
 CTGOV_BASE = "https://clinicaltrials.gov/api/v2/studies"
