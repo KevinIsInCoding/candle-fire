@@ -37,12 +37,19 @@ def _load_trials() -> list[dict]:
         return [json.loads(line) for line in f if line.strip()]
 
 
-_collection = load_collection(CHROMA_DIR, CHROMA_COLLECTION)
+def _load_collection():
+    try:
+        return load_collection(CHROMA_DIR, CHROMA_COLLECTION)
+    except Exception:
+        _logger.warning("ChromaDB collection not found — running in demo mode (no data)")
+        return None
+
+_collection = _load_collection()
 _graph = _load_graph()
 _trials = _load_trials()
 _client = anthropic.Anthropic()
 
-_n_chunks = _collection.count()
+_n_chunks = _collection.count() if _collection else 0
 _n_trials = len(_trials)
 _kg_nodes = _graph.number_of_nodes() if _graph else 0
 
@@ -61,6 +68,12 @@ _EXAMPLES = [
 
 def respond(message: str, history: list[dict]):
     if not message.strip():
+        yield history, gr.update(value="", interactive=True)
+        return
+
+    if _collection is None:
+        history = history + [{"role": "user", "content": message}]
+        history = history + [{"role": "assistant", "content": "⚠️ The knowledge base has not been loaded yet. The pipeline data (ChromaDB index, knowledge graph, papers) needs to be uploaded to this Space. Please contact the Space administrator."}]
         yield history, gr.update(value="", interactive=True)
         return
 
