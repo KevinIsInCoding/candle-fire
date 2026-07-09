@@ -99,34 +99,11 @@ def _extract_batch(
     registry: CanonicalRegistry,
 ) -> list[PaperExtractionResult]:
     """Send a batch of papers to Claude and collect one extract_entities call per paper."""
-    user_content = _format_batch(batch)
-
-    try:
-        response = client.messages.create(
-            model=EXTRACTION_MODEL,
-            max_tokens=4096,
-            system=_EXTRACTION_SYSTEM,
-            tools=EXTRACTION_TOOLS,
-            tool_choice={"type": "any"},
-            messages=[{"role": "user", "content": user_content}],
-        )
-    except anthropic.RateLimitError:
-        _logger.warning("Rate limited — sleeping 30s")
-        time.sleep(30)
-        response = client.messages.create(
-            model=EXTRACTION_MODEL,
-            max_tokens=4096,
-            system=_EXTRACTION_SYSTEM,
-            tools=EXTRACTION_TOOLS,
-            tool_choice={"type": "any"},
-            messages=[{"role": "user", "content": user_content}],
-        )
-
-    # Build a PMID→paper lookup so we can match extracted results back
     paper_by_pmid = {p.pmid: p for p in batch}
+    content_blocks = _call_claude(client, batch)
 
     results: list[PaperExtractionResult] = []
-    for block in response.content:
+    for block in content_blocks:
         if block.type != "tool_use" or block.name != "extract_entities":
             continue
 
@@ -151,14 +128,61 @@ def _extract_batch(
         # Mark paper entity_names (used downstream by RAG indexer on re-index)
         paper.entity_names = [e.canonical_id for e in entities]
 
-    # For any paper with no Claude response, add an empty result so it's not re-processed
+    # Retry any papers Claude missed — send them individually
     found_pmids = {r.pmid for r in results}
+    missed = [p for p in batch if p.pmid not in found_pmids]
+    if missed:
+        _logger.info(f"Retrying {len(missed)} missed papers individually")
+        for paper in missed:
+            retry_results = _call_claude(client, [paper])
+            for block in retry_results:
+                if block.type != "tool_use" or block.name != "extract_entities":
+                    continue
+                inp = block.input
+                pmid = str(inp.get("pmid", ""))
+                if not pmid or pmid not in paper_by_pmid:
+                    continue
+                entities = _parse_entities(inp.get("entities", []), pmid, registry)
+                relationships = _parse_relationships(inp.get("relationships", []), pmid, registry)
+                results.append(PaperExtractionResult(pmid=pmid, entities=entities, relationships=relationships))
+                paper_by_pmid[pmid].entity_names = [e.canonical_id for e in entities]
+                found_pmids.add(pmid)
+                _logger.info(f"Retry succeeded for PMID {pmid}")
+            time.sleep(0.5)
+
+    # Any still-missing after retry → record empty so they're not re-attempted
     for p in batch:
         if p.pmid not in found_pmids:
-            _logger.warning(f"No extraction result for PMID {p.pmid} — recording empty")
+            _logger.warning(f"No extraction result for PMID {p.pmid} after retry — recording empty")
             results.append(PaperExtractionResult(pmid=p.pmid, entities=[], relationships=[]))
 
     return results
+
+
+def _call_claude(client: anthropic.Anthropic, batch: list[ALSPaper]) -> list:
+    """Raw Claude call — returns response.content blocks."""
+    try:
+        response = client.messages.create(
+            model=EXTRACTION_MODEL,
+            max_tokens=4096,
+            system=_EXTRACTION_SYSTEM,
+            tools=EXTRACTION_TOOLS,
+            tool_choice={"type": "any"},
+            messages=[{"role": "user", "content": _format_batch(batch)}],
+        )
+        return response.content
+    except anthropic.RateLimitError:
+        _logger.warning("Rate limited — sleeping 30s")
+        time.sleep(30)
+        response = client.messages.create(
+            model=EXTRACTION_MODEL,
+            max_tokens=4096,
+            system=_EXTRACTION_SYSTEM,
+            tools=EXTRACTION_TOOLS,
+            tool_choice={"type": "any"},
+            messages=[{"role": "user", "content": _format_batch(batch)}],
+        )
+        return response.content
 
 
 def _format_batch(batch: list[ALSPaper]) -> str:
