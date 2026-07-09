@@ -162,7 +162,7 @@ def _handle_search(
     # Step 4: Trial matching — prefer KG-linked trials, fall back to text match
     related_trials: list[dict] = []
     if graph and query_entities:
-        related_trials = kg_query.find_trials_for_entities(graph, expanded_entities, max_trials=5)
+        related_trials = kg_query.find_trials_for_entities(graph, expanded_entities, max_trials=10)
 
     if not related_trials and query_entities:
         entities_lower = [e.lower() for e in expanded_entities]
