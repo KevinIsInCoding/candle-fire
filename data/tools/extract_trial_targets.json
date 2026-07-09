@@ -1,0 +1,35 @@
+{
+  "type": "object",
+  "properties": {
+    "nct_id": {
+      "type": "string",
+      "description": "The ClinicalTrials.gov identifier (e.g. NCT12345678)."
+    },
+    "targets": {
+      "type": "array",
+      "description": "Primary biological targets modulated or studied in this trial.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Standard name of the target (e.g. TARDBP, SOD1, riluzole, neuroinflammation). Use canonical gene symbols where applicable."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["Gene", "Protein", "Compound", "Mechanism"],
+            "description": "Category of the target."
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "Confidence that this is the intended biological target (1.0 = explicit in text)."
+          }
+        },
+        "required": ["name", "type", "confidence"]
+      }
+    }
+  },
+  "required": ["nct_id", "targets"]
+}

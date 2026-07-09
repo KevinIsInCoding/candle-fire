@@ -34,5 +34,15 @@ SEARCH_LANDSCAPE_TOOL: anthropic.types.ToolParam = {
     "input_schema": _load("search_landscape"),
 }
 
+EXTRACT_TRIAL_TARGETS_TOOL: anthropic.types.ToolParam = {
+    "name": "extract_trial_targets",
+    "description": (
+        "Extract the primary biological target(s) of an ALS clinical trial — the gene, protein, "
+        "compound, or mechanism being tested or modulated. Call once per trial."
+    ),
+    "input_schema": _load("extract_trial_targets"),
+}
+
 EXTRACTION_TOOLS: list[anthropic.types.ToolParam] = [EXTRACT_ENTITIES_TOOL]
+TRIAL_EXTRACTION_TOOLS: list[anthropic.types.ToolParam] = [EXTRACT_TRIAL_TARGETS_TOOL]
 RESEARCH_TOOLS: list[anthropic.types.ToolParam] = [SEARCH_LANDSCAPE_TOOL]
