@@ -7,8 +7,17 @@ from collections.abc import Generator
 import anthropic
 import chromadb
 import networkx as nx
+from sentence_transformers import CrossEncoder
 
-from config import SYNTHESIS_MODEL
+from config import (
+    CROSS_ENCODER_MODEL,
+    CROSS_ENCODER_TOP_N,
+    RETRIEVAL_ENTITY_N,
+    RETRIEVAL_SEMANTIC_N,
+    RRF_K,
+    RRF_TOP_N,
+    SYNTHESIS_MODEL,
+)
 from graph import query as kg_query
 from llm import cached_system, cached_tools
 from logging_config import get_logger
@@ -17,6 +26,9 @@ from rag import retriever as rag_retriever
 from tools import RESEARCH_TOOLS
 
 _logger = get_logger("agents.research_agent")
+
+# Loaded once at startup — ~80MB model, ~80ms/pair on CPU
+_cross_encoder = CrossEncoder(CROSS_ENCODER_MODEL)
 
 
 def stream_research_agent(
@@ -63,7 +75,7 @@ def stream_research_agent(
                             "name": event.content_block.name,
                         }
                         current_input_json = ""
-                        yield ("status", "Searching ALS research knowledge base...")
+                        yield ("status", "Searching knowledge base and re-ranking results for precision...")
 
                 elif event.type == "content_block_delta":
                     if event.delta.type == "text_delta":
@@ -132,37 +144,61 @@ def _handle_search(
     else:
         expanded_entities = query_entities
 
-    # Step 2: RAG — semantic search on query text
-    semantic_results = rag_retriever.search(collection, query_text, n_results=10)
+    # Step 2: Semantic search → up to 30 papers (pure similarity, no citation weight yet)
+    semantic_results = rag_retriever.search(collection, query_text, n_results=RETRIEVAL_SEMANTIC_N)
 
-    # Step 3: Entity-targeted RAG using expanded entity set
-    entity_results = rag_retriever.search_by_entities(collection, expanded_entities, n_results=15)
+    # Step 3: Entity-targeted search → up to 30 papers (one query per expanded entity)
+    entity_results = rag_retriever.search_by_entities(
+        collection, expanded_entities, n_results=RETRIEVAL_ENTITY_N
+    )
 
-    # Merge by PMID — keep best score per paper
-    seen: dict[str, dict] = {}
-    for r in semantic_results + entity_results:
-        pmid = r["pmid"]
-        if pmid not in seen or r["score"] > seen[pmid]["score"]:
-            seen[pmid] = r
+    # Step 4: RRF merge → top 20 papers
+    merged = rag_retriever.rrf_merge(
+        [semantic_results, entity_results], k=RRF_K, top_n=RRF_TOP_N
+    )
 
-    top_papers = sorted(seen.values(), key=lambda x: x["score"], reverse=True)[:15]
+    # Step 5: Cross-encoder rerank → top 15 papers
+    reranked = rag_retriever.cross_encoder_rerank(
+        _cross_encoder, query_text, merged, top_n=CROSS_ENCODER_TOP_N
+    )
+
+    # Step 6: Citation boost — final score = ce_score × log(citation_count + 2)
+    top_papers = rag_retriever.apply_citation_boost(reranked)
 
     _logger.info(
-        "KG+RAG search",
+        "KG+RAG+CE search",
         extra={"data": {
             "query_entities": query_entities,
             "expanded_entities": len(expanded_entities),
             "semantic_hits": len(semantic_results),
             "entity_hits": len(entity_results),
-            "merged": len(top_papers),
+            "rrf_merged": len(merged),
+            "after_cross_encoder": len(top_papers),
             "kg_active": graph is not None,
         }},
     )
 
-    # Step 4: Trial matching — prefer KG-linked trials, fall back to text match
+    # Step 7: Trial matching — prefer KG-linked trials, fall back to text match
     related_trials: list[dict] = []
     if graph and query_entities:
         related_trials = kg_query.find_trials_for_entities(graph, expanded_entities, max_trials=10)
+
+    if not related_trials:
+        # Exact NCT ID match first — handles "NCT06351592" style queries
+        nct_ids_in_query = {
+            w.upper() for w in query_text.split() if w.upper().startswith("NCT")
+        }
+        trial_by_nct = {t.get("nct_id", "").upper(): t for t in trials}
+        for nct_id in nct_ids_in_query:
+            if nct_id in trial_by_nct:
+                t = trial_by_nct[nct_id]
+                related_trials.append({
+                    "nct_id": t.get("nct_id", ""),
+                    "title": t.get("title", ""),
+                    "phase": t.get("phase", ""),
+                    "status": t.get("status", ""),
+                    "url": t.get("url", ""),
+                })
 
     if not related_trials and query_entities:
         entities_lower = [e.lower() for e in expanded_entities]

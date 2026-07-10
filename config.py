@@ -34,9 +34,20 @@ PUBMED_BATCH_SIZE = 200  # PMIDs per Entrez efetch call
 # Entity extraction
 EXTRACTION_BATCH_SIZE = 10  # papers per Claude call
 
-# RAG
-CHROMA_N_RESULTS = 10
-CHROMA_ENTITY_N_RESULTS = 15
+# RAG — retrieval counts per stage
+CHROMA_N_RESULTS = 10          # legacy default (kept for backward compat)
+CHROMA_ENTITY_N_RESULTS = 15   # legacy default (kept for backward compat)
+RETRIEVAL_SEMANTIC_N = 30      # semantic search candidate pool
+RETRIEVAL_ENTITY_N = 30        # entity search candidate pool
+RETRIEVAL_ENTITY_QUERY_CAP = 12  # max entity names to query individually
+
+# RRF merge
+RRF_K = 10       # lower k → stronger rank differentiation (k=60 is too flat for 30-item lists)
+RRF_TOP_N = 20   # candidates passed to cross-encoder
+
+# Cross-encoder reranking
+CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+CROSS_ENCODER_TOP_N = 15  # final papers sent to Claude for synthesis
 
 # Knowledge graph
 KG_EXPANSION_HOPS = 1  # hops for query entity expansion
