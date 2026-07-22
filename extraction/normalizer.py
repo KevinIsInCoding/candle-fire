@@ -104,6 +104,16 @@ _MECHANISM_ALIASES: dict[str, str] = {
 }
 
 
+def guess_entity_type(name: str) -> str:
+    """Best-effort entity type inference from name. Used when type metadata is unavailable."""
+    n = name.strip()
+    if n.upper() in _GENE_ALIASES or n in _GENE_ALIASES:
+        return "Gene"
+    if n in _COMPOUND_ALIASES:
+        return "Compound"
+    return "Protein"
+
+
 def normalize_entity(name: str, entity_type: str) -> str:
     """Return a canonical_id string in the form '<prefix>:<canonical_name>'."""
     canonical = _resolve_name(name.strip(), entity_type)

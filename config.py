@@ -22,10 +22,25 @@ GRAPH_JSON_PATH = DATA_DIR / "graph" / "als_graph.json"
 CHROMA_DIR = DATA_DIR / "chroma"
 CHROMA_COLLECTION = "als_papers"
 
+# Seed entity files
+MANUAL_SEEDS_PATH = DATA_DIR / "seeds" / "manual_seeds.json"
+DERIVED_SEEDS_PATH = DATA_DIR / "seeds" / "derived_seeds.json"
+SEED_PROMOTION_THRESHOLD = 5   # min papers for entity to become a derived seed
+REFRESH_STATE_PATH = DATA_DIR / ".refresh_state.json"
+
 # PubMed ingestion defaults
+PUBMED_BASE_QUERY = (
+    '"amyotrophic lateral sclerosis"[MeSH Major Topic] '
+    "AND hasabstract[text]"
+)
 PUBMED_DEFAULT_QUERY = (
     '"amyotrophic lateral sclerosis"[MeSH Major Topic] '
     'AND ("2018"[PDAT]:"2024"[PDAT]) '
+    "AND hasabstract[text]"
+)
+PUBMED_REFRESH_QUERY_TEMPLATE = (
+    '"amyotrophic lateral sclerosis"[MeSH Major Topic] '
+    'AND ("{since_date}"[PDAT]:"3000"[PDAT]) '
     "AND hasabstract[text]"
 )
 PUBMED_DEFAULT_MAX = 500
@@ -52,34 +67,6 @@ CROSS_ENCODER_TOP_N = 15  # final papers sent to Claude for synthesis
 # Knowledge graph
 KG_EXPANSION_HOPS = 1  # hops for query entity expansion
 KG_MIN_EDGE_CONFIDENCE = 0.3  # edges below this are excluded from traversal
-
-# ALS seed entities — pre-populate the graph before paper-derived extraction
-ALS_SEED_ENTITIES = {
-    "genes": [
-        "SOD1", "TARDBP", "FUS", "C9orf72", "ATXN2",
-        "TBK1", "OPTN", "UBQLN2", "VCP", "NEK1",
-        "ANG", "SETX", "SIGMAR1", "CHCHD10", "MATR3",
-    ],
-    "proteins": [
-        "TDP-43", "FUS protein", "SOD1 protein", "Alsin",
-        "Optineurin", "p62", "Ubiquilin-2",
-    ],
-    "compounds": [
-        "riluzole", "edaravone", "tofersen", "AMX0035",
-        "mexiletine", "masitinib", "bosutinib",
-    ],
-    "mechanisms": [
-        "glutamate excitotoxicity", "oxidative stress",
-        "neuroinflammation", "protein aggregation",
-        "RNA metabolism dysfunction", "mitochondrial dysfunction",
-        "axonal transport defect", "autophagy impairment",
-    ],
-    "phenotypes": [
-        "upper motor neuron degeneration", "lower motor neuron degeneration",
-        "bulbar onset ALS", "spinal onset ALS",
-        "frontotemporal dementia", "respiratory failure",
-    ],
-}
 
 # ALS condition synonyms for ClinicalTrials.gov queries
 ALS_CONDITION_TERMS = [

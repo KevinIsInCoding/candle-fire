@@ -44,6 +44,7 @@ def main() -> None:
             f"ACTIVE_NOT_RECRUITING). Choices: {_ALL_STATUSES}"
         ),
     )
+    parser.add_argument("--upsert", action="store_true", help="Merge fetched trials into existing trials.jsonl by nct_id")
     args = parser.parse_args()
 
     TRIALS_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -53,6 +54,20 @@ def main() -> None:
     console.print(f"[cyan]Fetching ALS interventional trials (status={args.status})...[/cyan]")
     trials = fetch_als_trials(status=args.status, client=client)
     console.print(f"[green]Fetched {len(trials)} trials[/green]")
+
+    if args.upsert and TRIALS_PATH.exists():
+        existing: dict[str, dict] = {}
+        with open(TRIALS_PATH, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    t = json.loads(line)
+                    existing[t["nct_id"]] = t
+        before = len(existing)
+        for trial in trials:
+            existing[trial["nct_id"]] = trial
+        trials = list(existing.values())
+        console.print(f"[cyan]Upsert: {before} existing + {len(trials) - before} new/updated → {len(trials)} total[/cyan]")
 
     with open(TRIALS_PATH, "w", encoding="utf-8") as f:
         for trial in trials:
