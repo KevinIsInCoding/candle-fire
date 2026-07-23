@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
 Ingest ALS clinical trials from ClinicalTrials.gov v2 API.
+Fetches ALL statuses (recruiting, completed, terminated, withdrawn, etc.)
+so physicians can see the full trial landscape including failed trials.
 
 Usage:
     uv run python scripts/ingest_trials.py
-    uv run python scripts/ingest_trials.py --status RECRUITING
-    uv run python scripts/ingest_trials.py --status RECRUITING NOT_YET_RECRUITING COMPLETED
+    uv run python scripts/ingest_trials.py --upsert
 """
 from __future__ import annotations
 
@@ -28,22 +29,8 @@ from ingestion.clinicaltrials import fetch_als_trials
 
 console = Console()
 
-_ALL_STATUSES = ["RECRUITING", "COMPLETED", "ACTIVE_NOT_RECRUITING", "NOT_YET_RECRUITING"]
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest ALS clinical trials")
-    parser.add_argument(
-        "--status",
-        nargs="+",
-        default=["RECRUITING", "NOT_YET_RECRUITING", "ACTIVE_NOT_RECRUITING"],
-        choices=_ALL_STATUSES,
-        metavar="STATUS",
-        help=(
-            f"One or more trial statuses to fetch (default: RECRUITING NOT_YET_RECRUITING "
-            f"ACTIVE_NOT_RECRUITING). Choices: {_ALL_STATUSES}"
-        ),
-    )
     parser.add_argument("--upsert", action="store_true", help="Merge fetched trials into existing trials.jsonl by nct_id")
     args = parser.parse_args()
 
@@ -51,8 +38,8 @@ def main() -> None:
 
     client = anthropic.Anthropic()
 
-    console.print(f"[cyan]Fetching ALS interventional trials (status={args.status})...[/cyan]")
-    trials = fetch_als_trials(status=args.status, client=client)
+    console.print("[cyan]Fetching all ALS interventional trials (no status filter)...[/cyan]")
+    trials = fetch_als_trials(client=client)
     console.print(f"[green]Fetched {len(trials)} trials[/green]")
 
     if args.upsert and TRIALS_PATH.exists():

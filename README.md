@@ -66,7 +66,10 @@ uv run python scripts/build_index.py
 ### Launch
 
 ```bash
-# Web UI
+# Web UI (auto-reloads on file changes — use during development)
+uv run gradio app.py
+
+# Web UI (production / one-shot)
 uv run python app.py
 
 # CLI
