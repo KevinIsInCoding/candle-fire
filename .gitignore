@@ -1,0 +1,30 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Data — downloaded from KevinIsCoding/candle-fire-data HF dataset at Space startup
+data/chroma/
+data/papers/
+data/graph/als_graph.pkl
+data/extracted/.progress.json
+
+# Logs
+logs/
+
+# uv
+.python-version
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
