@@ -11,9 +11,10 @@ from pathlib import Path
 import networkx as nx
 
 from config import (
-    ALS_SEED_ENTITIES,
+    DERIVED_SEEDS_PATH,
     ENTITIES_PATH,
     KG_MIN_EDGE_CONFIDENCE,
+    MANUAL_SEEDS_PATH,
     TRIALS_PATH,
 )
 from extraction.normalizer import normalize_entity
@@ -59,15 +60,37 @@ def _add_seed_entities(G: nx.DiGraph) -> None:
         "mechanisms": "Mechanism",
         "phenotypes": "Phenotype",
     }
+
+    manual = json.loads(MANUAL_SEEDS_PATH.read_text())
+
+    derived: dict[str, list[str]] = {}
+    if DERIVED_SEEDS_PATH.exists():
+        derived = json.loads(DERIVED_SEEDS_PATH.read_text())
+
     for category, entity_type in type_map.items():
-        for name in ALS_SEED_ENTITIES.get(category, []):
+        seen: set[str] = set()
+        for name in manual.get(category, []):
             canonical_id = normalize_entity(name, entity_type)
+            seen.add(canonical_id)
             _upsert_node(G, canonical_id, {
                 "type": entity_type,
                 "display_name": name,
                 "paper_count": 0,
                 "evidence_pmids": [],
                 "is_seed": True,
+            })
+        for name in derived.get(category, []):
+            canonical_id = normalize_entity(name, entity_type)
+            if canonical_id in seen:
+                continue
+            seen.add(canonical_id)
+            _upsert_node(G, canonical_id, {
+                "type": entity_type,
+                "display_name": name,
+                "paper_count": 0,
+                "evidence_pmids": [],
+                "is_seed": False,
+                "is_derived_seed": True,
             })
 
 
@@ -186,7 +209,27 @@ def _add_trials(G: nx.DiGraph, trials_path: Path) -> int:
                         matched = True
                         break
                 if not matched:
-                    _logger.debug(f"Trial {nct_id}: no graph node for target {target_name!r}")
+                    # Novel entity from trial with no paper evidence — canonicalize as
+                    # compound (trial targets are drugs) but type stays Unknown since
+                    # we can't confirm mechanism/class without literature support.
+                    fallback_id = normalize_entity(target_name, "Compound")
+                    _upsert_node(G, fallback_id, {
+                        "type": "Unknown",
+                        "display_name": target_name,
+                        "paper_count": 0,
+                        "evidence_pmids": [],
+                        "confidence": 0.0,
+                        "is_seed": False,
+                        "is_trial_derived": True,
+                    })
+                    G.add_edge(node_id, fallback_id, **{
+                        "relation_type": "TESTED_IN",
+                        "relation_types": ["TESTED_IN"],
+                        "evidence_pmids": [],
+                        "confidence": 1.0,
+                        "evidence_text": "",
+                    })
+                    _logger.debug(f"Trial {nct_id}: created trial-derived node {fallback_id!r} (type=Unknown)")
 
             n_trials += 1
     return n_trials

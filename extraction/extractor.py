@@ -19,7 +19,7 @@ from config import (
     EXTRACTION_PROGRESS_PATH,
     PAPERS_PATH,
 )
-from extraction.normalizer import CanonicalRegistry, normalize_entity
+from extraction.normalizer import CanonicalRegistry, guess_entity_type, normalize_entity
 from logging_config import get_logger
 from models import ALSPaper, ExtractedEntity, EntityRelationship, PaperExtractionResult
 from tools import EXTRACTION_TOOLS
@@ -254,14 +254,7 @@ def _parse_relationships(
     return rels
 
 
-def _guess_type(name: str) -> str:
-    """Best-effort entity type guess from name for relationship source/target."""
-    from extraction.normalizer import _GENE_ALIASES, _COMPOUND_ALIASES
-    if name.strip().upper() in _GENE_ALIASES or name.strip() in _GENE_ALIASES:
-        return "Gene"
-    if name.strip() in _COMPOUND_ALIASES:
-        return "Compound"
-    return "Protein"
+_guess_type = guess_entity_type
 
 
 def _load_papers(path: Path) -> list[ALSPaper]:

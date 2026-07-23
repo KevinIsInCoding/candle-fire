@@ -1,0 +1,26 @@
+{
+  "genes": [
+    "SOD1", "TARDBP", "FUS", "C9orf72", "ATXN2",
+    "TBK1", "OPTN", "UBQLN2", "VCP", "NEK1",
+    "ANG", "SETX", "SIGMAR1", "CHCHD10", "MATR3"
+  ],
+  "proteins": [
+    "TDP-43", "FUS protein", "SOD1 protein", "Alsin",
+    "Optineurin", "p62", "Ubiquilin-2"
+  ],
+  "compounds": [
+    "riluzole", "edaravone", "tofersen", "AMX0035",
+    "mexiletine", "masitinib", "bosutinib"
+  ],
+  "mechanisms": [
+    "glutamate excitotoxicity", "oxidative stress",
+    "neuroinflammation", "protein aggregation",
+    "RNA metabolism dysfunction", "mitochondrial dysfunction",
+    "axonal transport defect", "autophagy impairment"
+  ],
+  "phenotypes": [
+    "upper motor neuron degeneration", "lower motor neuron degeneration",
+    "bulbar onset ALS", "spinal onset ALS",
+    "frontotemporal dementia", "respiratory failure"
+  ]
+}

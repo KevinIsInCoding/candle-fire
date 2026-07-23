@@ -28,19 +28,26 @@ from rich.progress import track
 import ingestion.pmc as pmc
 import ingestion.pubmed as pubmed
 import ingestion.semantic_scholar as ss
-from config import PAPERS_PATH, PUBMED_DEFAULT_MAX, PUBMED_DEFAULT_QUERY
+from config import PAPERS_PATH, PUBMED_DEFAULT_MAX, PUBMED_DEFAULT_QUERY, PUBMED_REFRESH_QUERY_TEMPLATE
 
 console = Console()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest ALS papers")
-    parser.add_argument("--query", default=PUBMED_DEFAULT_QUERY, help="PubMed query string")
+    parser.add_argument("--query", default=None, help="PubMed query string (overrides --since)")
+    parser.add_argument("--since", metavar="YYYY-MM-DD", help="Fetch papers published on or after this date (incremental append mode)")
     parser.add_argument("--max", type=int, default=PUBMED_DEFAULT_MAX, dest="max_results", help="Max papers to fetch")
     parser.add_argument("--pmid-file", help="Path to file with one PMID per line")
     parser.add_argument("--skip-fulltext", action="store_true", help="Skip PMC full text fetch")
     parser.add_argument("--skip-citations", action="store_true", help="Skip Semantic Scholar citation counts")
     args = parser.parse_args()
+
+    if args.query is None:
+        if args.since:
+            args.query = PUBMED_REFRESH_QUERY_TEMPLATE.format(since_date=args.since)
+        else:
+            args.query = PUBMED_DEFAULT_QUERY
 
     PAPERS_PATH.parent.mkdir(parents=True, exist_ok=True)
 
@@ -57,6 +64,21 @@ def main() -> None:
     if not pmids:
         console.print("[red]No PMIDs found — check your query or PMID file.[/red]")
         sys.exit(1)
+
+    # In append mode, filter out PMIDs already in the existing corpus
+    existing_pmids: set[str] = set()
+    if args.since and PAPERS_PATH.exists():
+        with open(PAPERS_PATH, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    existing_pmids.add(json.loads(line).get("pmid", ""))
+        original_count = len(pmids)
+        pmids = [p for p in pmids if p not in existing_pmids]
+        console.print(f"[cyan]Incremental mode: {original_count} fetched, {len(existing_pmids)} already known, {len(pmids)} new[/cyan]")
+        if not pmids:
+            console.print("[green]No new papers found — corpus is up to date.[/green]")
+            return
 
     # Step 2: Fetch paper records from PubMed
     console.print("[cyan]Fetching Medline records...[/cyan]")
@@ -91,8 +113,9 @@ def main() -> None:
             paper.citation_count = citation_map.get(paper.pmid, 0)
         console.print(f"[green]Got citation counts for {len(citation_map)}/{len(papers)} papers[/green]")
 
-    # Step 5: Write to JSONL
-    with open(PAPERS_PATH, "w", encoding="utf-8") as f:
+    # Step 5: Write to JSONL (append in incremental mode, overwrite otherwise)
+    write_mode = "a" if args.since else "w"
+    with open(PAPERS_PATH, write_mode, encoding="utf-8") as f:
         for paper in papers:
             f.write(json.dumps(paper.to_dict()) + "\n")
 
