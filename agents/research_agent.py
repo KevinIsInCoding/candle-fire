@@ -18,6 +18,7 @@ from config import (
     RRF_TOP_N,
     SYNTHESIS_MODEL,
 )
+from agents.grounding import enforce_grounding
 from graph import query as kg_query
 from llm import cached_system, cached_tools
 from logging_config import get_logger
@@ -29,6 +30,17 @@ _logger = get_logger("agents.research_agent")
 
 # Loaded once at startup — ~80MB model, ~80ms/pair on CPU
 _cross_encoder = CrossEncoder(CROSS_ENCODER_MODEL)
+
+
+def _gate(answer: str, pmid_excerpts: dict[str, str]) -> str:
+    """Apply the grounding gate to the final answer, logging any bullets removed."""
+    result = enforce_grounding(answer, pmid_excerpts)
+    if result.changed:
+        _logger.warning(
+            "grounding gate removed unsupported claims",
+            extra={"data": {"removed_count": len(result.removed), "removed": result.removed}},
+        )
+    return result.text
 
 
 def stream_research_agent(
@@ -51,6 +63,10 @@ def stream_research_agent(
     ]
     # Attach graph reference so _handle_search can use KG expansion
     _graph = graph
+
+    # PMID -> retrieved excerpt, accumulated across every search the agent runs.
+    # The grounding gate checks the model's inline (PMID: N) citations against these.
+    pmid_excerpts: dict[str, str] = {}
 
     while True:
         stream_text = ""
@@ -100,7 +116,7 @@ def stream_research_agent(
         messages.append({"role": "assistant", "content": final_msg.content})
 
         if final_msg.stop_reason == "end_turn":
-            yield ("done", stream_text)
+            yield ("done", _gate(stream_text, pmid_excerpts))
             return
 
         if final_msg.stop_reason == "tool_use" and tool_calls:
@@ -110,6 +126,10 @@ def stream_research_agent(
                 if tool_call["name"] == "search_research_landscape":
                     result = _handle_search(tool_call["input"], collection, trials, _graph)
                     is_error = False
+                    for paper in result.get("papers", []):
+                        pmid = str(paper.get("pmid", ""))
+                        if pmid and pmid not in pmid_excerpts:
+                            pmid_excerpts[pmid] = paper.get("excerpt", "")
                 else:
                     result = {"error": f"Unknown tool: {tool_call['name']}"}
                     is_error = True
@@ -123,7 +143,7 @@ def stream_research_agent(
 
             messages.append({"role": "user", "content": tool_results})
         else:
-            yield ("done", stream_text)
+            yield ("done", _gate(stream_text, pmid_excerpts))
             return
 
 

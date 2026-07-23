@@ -80,13 +80,24 @@ def main() -> None:
 
     console.print()
 
+    streamed = ""
     for event_type, content in stream_research_agent(client, query, collection, trials, graph=graph):
         if event_type == "status":
             console.print(f"[dim italic]{content}[/dim italic]")
         elif event_type == "token":
+            streamed += content
             console.print(content, end="", highlight=False)
         elif event_type == "done":
             console.print()
+            # `content` is the grounding-gated answer. It only differs from the streamed text
+            # when the gate removed an unsupported claim — reprint the corrected version.
+            if content and content.strip() != streamed.strip():
+                console.print(
+                    "\n[yellow]⚠ Grounding gate removed unsupported claim(s). "
+                    "Corrected answer:[/yellow]\n"
+                )
+                console.print(content, highlight=False)
+                console.print()
 
 
 if __name__ == "__main__":

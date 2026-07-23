@@ -95,7 +95,9 @@ def respond(message: str, history: list[dict]):
             history[-1]["content"] = response_text
             yield history, gr.update()
         elif event_type == "done":
-            history[-1]["content"] = response_text or content
+            # `content` is the grounding-gated answer — prefer it over the raw streamed text,
+            # which may still contain bullets the gate removed.
+            history[-1]["content"] = content or response_text
             yield history, gr.update(interactive=True)
             return
 
