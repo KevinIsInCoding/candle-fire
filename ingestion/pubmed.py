@@ -28,14 +28,39 @@ def _sleep() -> None:
     time.sleep(0.1 if os.getenv("NCBI_API_KEY") else 0.4)
 
 
+_ESEARCH_PAGE_SIZE = 9999  # NCBI hard cap per esearch call
+
+
 def search_pmids(query: str, max_results: int = 500) -> list[str]:
-    """Search PubMed with a query string and return a list of PMIDs."""
+    """Search PubMed with a query string and return a list of PMIDs.
+
+    Pages through esearch results in chunks of 9,999 (NCBI's per-call cap)
+    until max_results or the total result count is reached.
+    """
     _configure_entrez()
-    handle = Entrez.esearch(db="pubmed", term=query, retmax=max_results)
-    record = Entrez.read(handle)
-    handle.close()
-    pmids = list(record["IdList"])
-    _logger.info("PubMed esearch", extra={"data": {"count": len(pmids), "query": query[:80]}})
+    pmids: list[str] = []
+    retstart = 0
+    total: int | None = None
+
+    while True:
+        want = min(_ESEARCH_PAGE_SIZE, max_results - len(pmids))
+        handle = Entrez.esearch(db="pubmed", term=query, retmax=want, retstart=retstart)
+        record = Entrez.read(handle)
+        handle.close()
+
+        if total is None:
+            total = int(record["Count"])
+
+        page = list(record["IdList"])
+        pmids.extend(page)
+
+        if not page or len(pmids) >= max_results or len(pmids) >= total:
+            break
+
+        retstart += len(page)
+        _sleep()
+
+    _logger.info("PubMed esearch", extra={"data": {"count": len(pmids), "total": total, "query": query[:80]}})
     return pmids
 
 

@@ -4,8 +4,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import torch
 import chromadb
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
 from config import CHROMA_COLLECTION, CHROMA_DIR, PAPERS_PATH
 from logging_config import get_logger
@@ -13,9 +15,12 @@ from models import ALSPaper
 
 _logger = get_logger("rag.indexer")
 
+# Use MPS on Apple Silicon, CUDA on NVIDIA, otherwise CPU.
+_DEVICE = "mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu")
+
 # BioLORD-2023-C: anchored to UMLS/SNOMED CT/MeSH ontologies — natively understands
 # biomedical synonyms (TARDBP = TDP-43, SOD1 = superoxide dismutase) and clinical phrasing.
-_EMBED_FN = SentenceTransformerEmbeddingFunction(model_name="FremyCompany/BioLORD-2023-C")
+_EMBED_FN = SentenceTransformerEmbeddingFunction(model_name="FremyCompany/BioLORD-2023-C", device=_DEVICE)
 
 
 def _chunk_paper(paper: ALSPaper) -> list[dict]:
@@ -58,8 +63,16 @@ def _chunk_paper(paper: ALSPaper) -> list[dict]:
             if body:
                 sections.append((current_title, body))
 
+        # Prioritise high-value sections; cap at 6 total to keep index lean.
+        # With 500 papers the cross-encoder only sees 20 candidates anyway —
+        # 50+ chunks per paper adds noise without improving recall.
+        _PRIORITY = {"abstract", "introduction", "results", "discussion", "conclusion", "methods"}
+        priority = [s for s in sections if s[0].lower() in _PRIORITY]
+        others = [s for s in sections if s[0].lower() not in _PRIORITY]
+        selected = (priority + others)[:6]
+
         chunks = []
-        for i, (section_title, section_text) in enumerate(sections):
+        for i, (section_title, section_text) in enumerate(selected):
             doc = f"{paper.title}\n[{section_title}]\n{section_text}"
             chunks.append({
                 "id": f"{paper.pmid}_s{i}",
@@ -127,13 +140,22 @@ def build_collection(
     _logger.info(f"Indexing {len(new_chunks)} new chunks from {len(papers)} papers")
 
     batch_size = 100
-    for i in range(0, len(new_chunks), batch_size):
-        batch = new_chunks[i : i + batch_size]
-        collection.add(
-            ids=[c["id"] for c in batch],
-            documents=[c["document"] for c in batch],
-            metadatas=[c["metadata"] for c in batch],
-        )
+    batches = [new_chunks[i : i + batch_size] for i in range(0, len(new_chunks), batch_size)]
+
+    with Progress(
+        TextColumn("[cyan]Embedding chunks[/cyan]"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+    ) as progress:
+        task = progress.add_task("", total=len(new_chunks))
+        for batch in batches:
+            collection.add(
+                ids=[c["id"] for c in batch],
+                documents=[c["document"] for c in batch],
+                metadatas=[c["metadata"] for c in batch],
+            )
+            progress.advance(task, len(batch))
 
     _logger.info(f"Collection '{collection_name}': {collection.count()} total chunks")
     return collection

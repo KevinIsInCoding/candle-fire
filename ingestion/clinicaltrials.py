@@ -28,16 +28,19 @@ Call extract_trial_targets once per trial. Return an empty targets list only whe
 
 
 def fetch_als_trials(
-    status: str | list[str] = ("RECRUITING", "NOT_YET_RECRUITING", "ACTIVE_NOT_RECRUITING"),
     client: "anthropic.Anthropic | None" = None,
 ) -> list[dict]:
-    """Fetch ALS interventional trials. Returns flat dicts ready for JSONL serialization."""
-    status_filter = ",".join(status) if isinstance(status, (list, tuple)) else status
+    """Fetch all ALS interventional + expanded-access studies, regardless of status.
 
+    No status filter — completed, terminated, and withdrawn trials are as
+    clinically important as active ones (negative results inform research).
+    `studyType:int exp` includes both interventional trials AND Expanded Access
+    Programs (EAP / compassionate use, e.g. NCT05281484), which physicians need for
+    off-trial access options. Status filtering is left to query time.
+    """
     params: dict[str, str | int] = {
         "query.cond": "Amyotrophic Lateral Sclerosis",
-        "filter.overallStatus": status_filter,
-        "aggFilters": "studyType:int",
+        "aggFilters": "studyType:int exp",
         "pageSize": 1000,
         "format": "json",
     }
@@ -91,11 +94,17 @@ def _flatten_trial(study: dict) -> dict:
         for iv in arms_mod.get("interventions", [])
     ]
 
+    study_type = design_mod.get("studyType", "")
+    is_eap = study_type == "EXPANDED_ACCESS"
+
     return {
         "nct_id": nct_id,
         "title": id_mod.get("briefTitle", ""),
-        "phase": ", ".join(design_mod.get("phases", [])) or "N/A",
+        # Expanded Access has no trial phase — surface it as the phase label instead
+        "phase": "Expanded Access" if is_eap else (", ".join(design_mod.get("phases", [])) or "N/A"),
         "status": status_mod.get("overallStatus", ""),
+        "study_type": study_type,
+        "is_expanded_access": is_eap,
         "sponsor": sponsor_mod.get("leadSponsor", {}).get("name", ""),
         "summary": desc_mod.get("briefSummary", ""),
         "interventions": interventions,
