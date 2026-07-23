@@ -27,19 +27,29 @@ def _sleep() -> None:
     time.sleep(0.1 if os.getenv("NCBI_API_KEY") else 0.4)
 
 
+_IDCONV_URL = "https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/"
+_IDCONV_BATCH = 200
+
+
 def get_pmcids(pmids: list[str]) -> dict[str, str]:
     """
     Map PubMed IDs to PMC IDs for papers with Open Access full text.
-    Sends one PMID at a time — batch elink merges all results into one
-    LinkSet with no per-ID mapping, making it unusable for this purpose.
+    Uses the NCBI ID Converter API (idconv) which accepts batches of 200 PMIDs
+    and returns a proper PMID→PMCID mapping — dramatically faster than one
+    elink call per PMID.
     Returns {pmid: pmcid}.
     """
-    _configure_entrez()
+    import urllib.request
+    import urllib.parse
+
     if not pmids:
         return {}
 
     from rich.progress import Progress, SpinnerColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn, TextColumn
+
+    email = os.environ.get("ENTREZ_EMAIL", "")
     result: dict[str, str] = {}
+    batches = [pmids[i : i + _IDCONV_BATCH] for i in range(0, len(pmids), _IDCONV_BATCH)]
 
     with Progress(
         SpinnerColumn(),
@@ -48,31 +58,36 @@ def get_pmcids(pmids: list[str]) -> dict[str, str]:
         TaskProgressColumn(),
         TimeRemainingColumn(),
     ) as progress:
-        task = progress.add_task("Looking up PMC IDs...", total=len(pmids))
+        task = progress.add_task("Looking up PMC IDs...", total=len(batches))
 
-        for pmid in pmids:
+        for batch in batches:
+            params = urllib.parse.urlencode({
+                "ids": ",".join(batch),
+                "format": "json",
+                "email": email,
+            })
+            url = f"{_IDCONV_URL}?{params}"
             for attempt in range(3):
                 try:
-                    handle = Entrez.elink(dbfrom="pubmed", db="pmc", id=pmid)
-                    link_sets = Entrez.read(handle)
-                    handle.close()
+                    with urllib.request.urlopen(url, timeout=30) as resp:
+                        import json as _json
+                        data = _json.loads(resp.read())
                     break
                 except Exception as exc:
                     if attempt == 2:
-                        _logger.debug(f"elink failed for PMID {pmid}: {exc}")
-                        link_sets = []
+                        _logger.warning(f"idconv batch failed: {exc}")
+                        data = {}
                         break
                     time.sleep(2 ** attempt)
 
-            for ls in link_sets:
-                for db_link in ls.get("LinkSetDb", []):
-                    if db_link.get("DbTo") == "pmc":
-                        links = db_link.get("Link", [])
-                        if links:
-                            result[pmid] = str(links[0]["Id"])
-                        break
+            for record in data.get("records", []):
+                pmid = record.get("pmid")
+                pmcid = record.get("pmcid")
+                # pmid comes back as int from the API; pmcid is like "PMC1234567"
+                if pmid and pmcid and pmcid.startswith("PMC"):
+                    result[str(pmid)] = pmcid[3:]
 
-            _sleep()
+            time.sleep(0.4)
             progress.advance(task)
 
     _logger.info("PMC ID lookup", extra={"data": {"pmids": len(pmids), "found": len(result)}})
@@ -112,19 +127,22 @@ def _parse_jats_xml(xml_data: bytes) -> str | None:
         return None
 
     sections: list[str] = []
-    for sec in body.findall(".//sec"):
-        # Skip nested sections — only top-level sec elements under body
-        if sec in body:
-            title_el = sec.find("title")
-            title = (title_el.text or "Section").strip() if title_el is not None else "Section"
 
-            paragraphs: list[str] = []
-            for p in sec.findall("p"):
-                text = "".join(p.itertext()).strip()
-                if text:
-                    paragraphs.append(text)
+    # Try structured sections first (standard JATS)
+    top_secs = [sec for sec in body.findall(".//sec") if sec in body]
+    for sec in top_secs:
+        title_el = sec.find("title")
+        title = (title_el.text or "Section").strip() if title_el is not None else "Section"
+        paragraphs = ["".join(p.itertext()).strip() for p in sec.findall(".//p")]
+        paragraphs = [t for t in paragraphs if t]
+        if paragraphs:
+            sections.append(f"[{title}]\n" + "\n".join(paragraphs))
 
-            if paragraphs:
-                sections.append(f"[{title}]\n" + "\n".join(paragraphs))
+    # Fall back to bare paragraphs when there are no top-level sec elements
+    if not sections:
+        paragraphs = ["".join(p.itertext()).strip() for p in body.findall(".//p")]
+        paragraphs = [t for t in paragraphs if t]
+        if paragraphs:
+            sections.append("[Body]\n" + "\n".join(paragraphs))
 
     return "\n\n".join(sections) if sections else None

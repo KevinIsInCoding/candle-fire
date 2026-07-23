@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import re
 
 import chromadb
 
@@ -72,6 +73,154 @@ def search_by_entities(
     return merged[:n_results]
 
 
+def _term_variants(term: str) -> list[str]:
+    """
+    Generate letter/digit boundary variants of a compound identifier so that
+    "SPG302", "SPG 302", and "SPG-302" all resolve to the same papers.
+    "SPG302" → ["SPG302", "SPG 302", "SPG-302"]
+    """
+    # Collapse any existing space/hyphen at letter–digit boundaries → canonical form
+    canonical = re.sub(r'(?<=[A-Za-z])[\s\-](?=\d)|(?<=\d)[\s\-](?=[A-Za-z])', '', term)
+    spaced = re.sub(r'([A-Za-z])(\d)', r'\1 \2', canonical)
+    hyphenated = re.sub(r'([A-Za-z])(\d)', r'\1-\2', canonical)
+    return list(dict.fromkeys([term, canonical, spaced, hyphenated]))
+
+
+def term_matches_text(text: str, term: str) -> bool:
+    """True if any spacing/hyphen variant of `term` appears in `text` (case-insensitive)."""
+    if not text or not term.strip():
+        return False
+    low = text.lower()
+    return any(v.lower() in low for v in _term_variants(term) if v.strip())
+
+
+def paper_texts_for_pmids(
+    collection: chromadb.Collection,
+    pmids: list[str],
+) -> dict[str, dict[str, str]]:
+    """
+    Fetch ALL chunks for each PMID in one call and return, per PMID:
+      {"abstract": <chunk_index 0 doc>, "full": <all chunk docs concatenated>}.
+    Used to distinguish "the paper is actually about this compound" (present in the
+    abstract) from an incidental full-text-only mention (present somewhere in the
+    body, e.g. a drug-pipeline table, but not the abstract). Fetching every chunk is
+    required because the retrieved representative chunk is often NOT the one holding
+    the compound name.
+    """
+    pmids = [p for p in dict.fromkeys(pmids) if p]
+    if not pmids:
+        return {}
+    try:
+        res = collection.get(
+            where={"pmid": {"$in": pmids}},
+            include=["documents", "metadatas"],
+        )
+    except Exception:
+        return {}
+    out: dict[str, dict[str, str]] = {p: {"abstract": "", "full": ""} for p in pmids}
+    parts: dict[str, list[str]] = {p: [] for p in pmids}
+    for meta, doc in zip(res.get("metadatas", []), res.get("documents", [])):
+        pmid = meta.get("pmid", "")
+        if pmid not in out:
+            continue
+        doc = doc or ""
+        parts[pmid].append(doc)
+        if meta.get("chunk_index") == 0:
+            out[pmid]["abstract"] = doc
+    for pmid in out:
+        out[pmid]["full"] = "\n".join(parts[pmid])
+    return out
+
+
+def is_grounded_in_abstract(collection: chromadb.Collection, term: str) -> bool:
+    """
+    True if any variant of `term` appears in an abstract chunk (chunk_index == 0).
+    Signals that at least one paper is genuinely *about* the term, as opposed to
+    only naming it in a full-text pipeline/landscape table.
+    """
+    if not term.strip() or collection.count() == 0:
+        return False
+    for variant in _term_variants(term):
+        if not variant.strip():
+            continue
+        try:
+            raw = collection.get(
+                where={"chunk_index": {"$eq": 0}},
+                where_document={"$contains": variant},
+                limit=1,
+                include=["metadatas"],
+            )
+        except Exception:
+            continue
+        if raw.get("ids"):
+            return True
+    return False
+
+
+def is_grounded_in_corpus(collection: chromadb.Collection, term: str) -> bool:
+    """
+    True if any spacing/hyphen variant of `term` appears literally in a paper
+    (ChromaDB $contains). This is exact-substring presence — the reliable signal
+    for "is this named entity actually written in the corpus", as opposed to
+    semantic search which always returns nearest neighbors regardless of relevance.
+    """
+    if not term.strip() or collection.count() == 0:
+        return False
+    for variant in _term_variants(term):
+        if not variant.strip():
+            continue
+        try:
+            raw = collection.query(
+                query_texts=[variant],
+                where_document={"$contains": variant},
+                n_results=1,
+                include=["metadatas"],
+            )
+        except Exception:
+            continue
+        if raw.get("ids", [[]])[0]:
+            return True
+    return False
+
+
+def search_by_keyword(
+    collection: chromadb.Collection,
+    terms: list[str],
+    n_results: int = 10,
+) -> list[dict]:
+    """
+    Exact-substring search using ChromaDB's where_document $contains filter.
+    Searches all spacing/hyphen variants of each term so "SPG302", "SPG 302",
+    and "SPG-302" all resolve to the same papers. Catches proper nouns (drug
+    codes, gene IDs) whose embeddings are meaningless to the model.
+    """
+    if not terms or collection.count() == 0:
+        return []
+
+    seen: dict[str, dict] = {}
+    for term in terms:
+        if not term.strip():
+            continue
+        for variant in _term_variants(term):
+            if not variant.strip():
+                continue
+            try:
+                raw = collection.query(
+                    query_texts=[variant],
+                    where_document={"$contains": variant},
+                    n_results=min(n_results, collection.count()),
+                    include=["documents", "metadatas", "distances"],
+                )
+            except Exception:
+                continue
+            for r in _parse_raw(raw):
+                pmid = r["pmid"]
+                if pmid not in seen or r["similarity"] > seen[pmid]["similarity"]:
+                    seen[pmid] = r
+
+    return _dedup_by_pmid(list(seen.values()))
+
+
 def rrf_merge(
     ranked_lists: list[list[dict]],
     k: int = RRF_K,
@@ -125,15 +274,31 @@ def cross_encoder_rerank(
     return candidates[:top_n]
 
 
+_RECENCY_BASE_YEAR = 1990
+_RECENCY_CURRENT_YEAR = 2025
+_RECENCY_MAX_BOOST = 0.5  # most recent papers get 1.5× vs oldest at 1.0×
+
+
 def apply_citation_boost(results: list[dict]) -> list[dict]:
     """
-    Final score = cross_encoder_score × log(citation_count + 2).
-    Applied after cross-encoder so citation quality amplifies — not corrupts — relevance.
-    log(2) ≈ 0.69 is the floor for uncited papers.
+    Final score = ce_score × log(citation_count + 2) × recency_factor.
+
+    Citation factor: log-scaled so each order-of-magnitude in citations adds
+    roughly equal weight. log(2) ≈ 0.69 floor for uncited papers.
+
+    Recency factor: linear 1.0 → 1.5 from 1990 to 2025. A 2024 paper scores
+    50% higher than a 1990 paper at equal citation count and relevance, reflecting
+    that recent evidence is more likely to reflect current understanding.
     """
     for r in results:
         base = r.get("ce_score", r.get("similarity", 0.0))
-        r["score"] = base * math.log(r["citation_count"] + 2)
+        citation_factor = math.log(r["citation_count"] + 2)
+        year = r.get("year") or _RECENCY_BASE_YEAR
+        recency_factor = 1.0 + _RECENCY_MAX_BOOST * (
+            max(0, year - _RECENCY_BASE_YEAR)
+            / (_RECENCY_CURRENT_YEAR - _RECENCY_BASE_YEAR)
+        )
+        r["score"] = base * citation_factor * recency_factor
     results.sort(key=lambda x: x["score"], reverse=True)
     return results
 

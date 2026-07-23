@@ -33,21 +33,18 @@ PUBMED_BASE_QUERY = (
     '"amyotrophic lateral sclerosis"[MeSH Major Topic] '
     "AND hasabstract[text]"
 )
-PUBMED_DEFAULT_QUERY = (
-    '"amyotrophic lateral sclerosis"[MeSH Major Topic] '
-    'AND ("2018"[PDAT]:"2024"[PDAT]) '
-    "AND hasabstract[text]"
-)
+PUBMED_DEFAULT_QUERY = PUBMED_BASE_QUERY  # no date cap — fetch all 19k+ ALS papers
 PUBMED_REFRESH_QUERY_TEMPLATE = (
     '"amyotrophic lateral sclerosis"[MeSH Major Topic] '
     'AND ("{since_date}"[PDAT]:"3000"[PDAT]) '
     "AND hasabstract[text]"
 )
-PUBMED_DEFAULT_MAX = 500
+PUBMED_DEFAULT_MAX = 20000
 PUBMED_BATCH_SIZE = 200  # PMIDs per Entrez efetch call
 
 # Entity extraction
-EXTRACTION_BATCH_SIZE = 10  # papers per Claude call
+EXTRACTION_BATCH_SIZE = 20  # papers per Claude call
+EXTRACTION_WORKERS = 8      # parallel Claude calls (Haiku limit: 1000 RPM on paid tier)
 
 # RAG — retrieval counts per stage
 CHROMA_N_RESULTS = 10          # legacy default (kept for backward compat)
