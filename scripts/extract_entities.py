@@ -63,7 +63,10 @@ def main() -> None:
         console.print(f"[dim]Testing with {args.max} papers[/dim]")
 
     console.print(f"[cyan]Starting entity extraction from {papers_path}...[/cyan]")
-    console.print("[dim]Rate-limited to ~1 batch/second. Cost: ~$0.03 per 10 papers.[/dim]\n")
+    console.print(
+        "[dim]Submitted via the Batch API (async, usually <1h). "
+        "Cost: ~$0.015 per 10 papers (~50% off vs. synchronous).[/dim]\n"
+    )
 
     client = anthropic.Anthropic()
     results = extract_all(papers_path=papers_path, client=client)
