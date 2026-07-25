@@ -182,6 +182,7 @@ with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
 if __name__ == "__main__":
     demo.launch(
         share=False,
+        ssr_mode=False,  # HF experimental Node SSR 503s on this Space; serve classic app from :7860
         css=_CSS,
         theme=gr.themes.Soft(),
     )
