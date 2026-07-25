@@ -227,7 +227,6 @@ with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
 if __name__ == "__main__":
     demo.launch(
         share=False,
-        ssr_mode=False,  # experimental SSR (Node) layer flaps 500/503 on HF; serve classic client-rendered app
         css=_CSS,
         theme=gr.themes.Soft(),
     )
