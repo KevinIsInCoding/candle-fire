@@ -43,6 +43,17 @@ EXTRACT_TRIAL_TARGETS_TOOL: anthropic.types.ToolParam = {
     "input_schema": _load("extract_trial_targets"),
 }
 
+CLASSIFY_THERAPY_TOOL: anthropic.types.ToolParam = {
+    "name": "classify_therapy",
+    "description": (
+        "Classify one experimental ALS therapy: its canonical name, modality, molecular target, "
+        "mechanism of action, and best-fit mechanism class from the ALS taxonomy. "
+        "Call once per therapy, echoing back the therapy_key verbatim."
+    ),
+    "input_schema": _load("classify_therapy"),
+}
+
 EXTRACTION_TOOLS: list[anthropic.types.ToolParam] = [EXTRACT_ENTITIES_TOOL]
 TRIAL_EXTRACTION_TOOLS: list[anthropic.types.ToolParam] = [EXTRACT_TRIAL_TARGETS_TOOL]
 RESEARCH_TOOLS: list[anthropic.types.ToolParam] = [SEARCH_LANDSCAPE_TOOL]
+LANDSCAPE_TOOLS: list[anthropic.types.ToolParam] = [CLASSIFY_THERAPY_TOOL]

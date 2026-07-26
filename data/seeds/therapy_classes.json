@@ -1,0 +1,17 @@
+{
+  "description": "Curated ALS mechanism/target taxonomy for the Experimental Therapy Landscape. The 'name' values are the canonical class labels used as the classification enum in data/tools/classify_therapy.json and as the top ring of the sunburst. Seeded from the graph's strongest Mechanism/Gene nodes.",
+  "classes": [
+    {"id": "tdp43", "name": "TDP-43 proteinopathy", "description": "Therapies targeting TDP-43 aggregation, mislocalization, or cryptic splicing (TARDBP, STMN2, UNC13A)."},
+    {"id": "sod1", "name": "SOD1", "description": "Therapies targeting SOD1 in SOD1-ALS — e.g., SOD1-lowering antisense oligonucleotides, misfolded-SOD1 clearance."},
+    {"id": "c9orf72", "name": "C9orf72", "description": "Therapies targeting the C9orf72 hexanucleotide repeat expansion, RNA foci, or dipeptide-repeat proteins."},
+    {"id": "fus", "name": "FUS", "description": "Therapies targeting FUS aggregation or nuclear mislocalization in FUS-ALS."},
+    {"id": "neuroinflammation", "name": "Neuroinflammation", "description": "Therapies modulating microglia, astrocytes, or immune/inflammatory signaling."},
+    {"id": "oxidative_stress", "name": "Oxidative stress", "description": "Antioxidants and therapies countering reactive oxygen species and free-radical damage (e.g., edaravone)."},
+    {"id": "mitochondrial", "name": "Mitochondrial dysfunction", "description": "Therapies improving mitochondrial bioenergetics, membrane stability, or apoptosis regulation."},
+    {"id": "excitotoxicity", "name": "Glutamate excitotoxicity", "description": "Therapies reducing glutamate-mediated excitotoxic motor-neuron injury (e.g., riluzole, AMPA-receptor antagonists)."},
+    {"id": "proteostasis", "name": "Proteostasis / autophagy", "description": "Therapies enhancing protein clearance — chaperones, autophagy induction, or the ubiquitin-proteasome system (e.g., arimoclomol)."},
+    {"id": "rna_metabolism", "name": "RNA metabolism", "description": "Therapies targeting broad RNA processing/splicing dysregulation not specific to a single gene above."},
+    {"id": "neurotrophic", "name": "Neurotrophic / regenerative", "description": "Neurotrophic factors, stem-cell, and gene therapies aiming to protect or regenerate motor neurons."},
+    {"id": "symptomatic_other", "name": "Symptomatic / Other", "description": "Symptomatic treatments, repurposed drugs, or therapies whose ALS mechanism is unclear or does not fit another class."}
+  ]
+}
