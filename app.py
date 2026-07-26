@@ -44,6 +44,50 @@ def _load_collection():
         _logger.warning("ChromaDB collection not found — running in demo mode (no data)")
         return None
 
+
+_HF_DATASET = "KevinIsCoding/candle-fire-data"
+
+
+def _ensure_data() -> None:
+    """Download chroma index + graph from the HF dataset repo if not already present.
+
+    No-op locally (data is on disk); on the HF Space (empty storage) it fetches the
+    runtime data. Having it here lets a single branch serve both dev and the Space.
+    """
+    need_chroma = not (CHROMA_DIR / "chroma.sqlite3").exists()
+    need_graph = not GRAPH_PICKLE_PATH.exists()
+    if not need_chroma and not need_graph:
+        return
+    try:
+        from huggingface_hub import hf_hub_download, snapshot_download
+        if need_chroma:
+            _logger.info("Downloading chroma index from HF dataset...")
+            CHROMA_DIR.mkdir(parents=True, exist_ok=True)
+            snapshot_download(
+                repo_id=_HF_DATASET, repo_type="dataset",
+                local_dir=str(CHROMA_DIR), allow_patterns=["chroma/**"],
+            )
+            nested = CHROMA_DIR / "chroma"
+            if nested.exists() and not (CHROMA_DIR / "chroma.sqlite3").exists():
+                import shutil
+                for item in nested.iterdir():
+                    shutil.move(str(item), str(CHROMA_DIR / item.name))
+                nested.rmdir()
+            _logger.info("Chroma download complete")
+        if need_graph:
+            _logger.info("Downloading graph from HF dataset...")
+            GRAPH_PICKLE_PATH.parent.mkdir(parents=True, exist_ok=True)
+            hf_hub_download(
+                repo_id=_HF_DATASET, repo_type="dataset",
+                filename="graph/als_graph.pkl", local_dir=str(GRAPH_PICKLE_PATH.parent.parent),
+            )
+            _logger.info("Graph download complete")
+    except Exception as e:
+        _logger.warning(f"Failed to download data from HF dataset: {e}")
+
+
+_ensure_data()
+
 _collection = _load_collection()
 _graph = _load_graph()
 _trials = _load_trials()
