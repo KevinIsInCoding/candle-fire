@@ -98,6 +98,12 @@ _n_chunks = _collection.count() if _collection else 0
 _n_trials = len(_trials)
 _kg_nodes = _graph.number_of_nodes() if _graph else 0
 
+# Experimental therapy landscape (offline-built artifact; loaded once)
+import landscape as landscape_mod
+
+_landscape = landscape_mod.load_landscape()
+_landscape_classes = landscape_mod.class_names(_landscape)
+
 # ── Example questions ─────────────────────────────────────────────────────────
 
 _EXAMPLES = [
@@ -168,52 +174,135 @@ Always verify claims with primary sources before applying to patient care.
 </div>"""
 
 
+def _landscape_select(class_name: str, phases):
+    """When the class (or phase filter) changes: repopulate therapies and show the first one's detail."""
+    labels = landscape_mod.therapy_labels(_landscape, class_name, phases)
+    first = labels[0] if labels else None
+    return (
+        gr.update(choices=labels, value=first),
+        landscape_mod.therapy_detail_md(_landscape, class_name, first or ""),
+        landscape_mod.trials_table_html(_landscape, class_name, first or ""),
+    )
+
+
+def _phase_change(phases, class_name: str):
+    """Phase filter: rebuild the sunburst and repopulate the current class's therapies."""
+    therapy_update, detail, trials = _landscape_select(class_name, phases)
+    return (landscape_mod.build_sunburst(_landscape, phases), therapy_update, detail, trials)
+
+
+def _therapy_select(class_name: str, therapy_label: str):
+    return (
+        landscape_mod.therapy_detail_md(_landscape, class_name, therapy_label),
+        landscape_mod.trials_table_html(_landscape, class_name, therapy_label),
+    )
+
+
 with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
 
-    with gr.Column(elem_classes="container"):
+    with gr.Tabs():
 
-        gr.Markdown(_TITLE_MD)
+        with gr.Tab("💬 Ask"):
+            with gr.Column(elem_classes="container"):
 
-        gr.HTML(
-            f'<div class="status-bar">'
-            f'{_n_chunks} paper chunks &nbsp;·&nbsp; '
-            f'{_n_trials} clinical trials &nbsp;·&nbsp; '
-            f'{_kg_nodes} knowledge graph nodes'
-            f'</div>'
-        )
+                gr.Markdown(_TITLE_MD)
 
-        chatbot = gr.Chatbot(
-            value=[],
-            height=520,
-            show_label=False,
-            sanitize_html=False,
-            avatar_images=(None, "assets/flame.svg"),
-            placeholder="Ask a question about ALS research to get started.",
-        )
+                gr.HTML(
+                    f'<div class="status-bar">'
+                    f'{_n_chunks} paper chunks &nbsp;·&nbsp; '
+                    f'{_n_trials} clinical trials &nbsp;·&nbsp; '
+                    f'{_kg_nodes} knowledge graph nodes'
+                    f'</div>'
+                )
 
-        with gr.Row():
-            msg_box = gr.Textbox(
-                placeholder="e.g. What is the evidence for tofersen targeting SOD1?",
-                show_label=False,
-                scale=9,
-                autofocus=True,
-                lines=1,
-            )
-            send_btn = gr.Button("Ask", scale=1, variant="primary", min_width=80)
+                chatbot = gr.Chatbot(
+                    value=[],
+                    height=520,
+                    show_label=False,
+                    sanitize_html=False,
+                    avatar_images=(None, "assets/flame.svg"),
+                    placeholder="Ask a question about ALS research to get started.",
+                )
 
-        gr.Markdown("**Example questions** — click to populate:")
+                with gr.Row():
+                    msg_box = gr.Textbox(
+                        placeholder="e.g. What is the evidence for tofersen targeting SOD1?",
+                        show_label=False,
+                        scale=9,
+                        autofocus=True,
+                        lines=1,
+                    )
+                    send_btn = gr.Button("Ask", scale=1, variant="primary", min_width=80)
 
-        with gr.Row():
-            with gr.Column(scale=1):
-                for ex in _EXAMPLES[:3]:
-                    btn = gr.Button(ex, size="sm", variant="secondary")
-                    btn.click(fn=lambda t=ex: t, outputs=[msg_box])
-            with gr.Column(scale=1):
-                for ex in _EXAMPLES[3:]:
-                    btn = gr.Button(ex, size="sm", variant="secondary")
-                    btn.click(fn=lambda t=ex: t, outputs=[msg_box])
+                gr.Markdown("**Example questions** — click to populate:")
 
-        gr.HTML(_DISCLAIMER_MD)
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        for ex in _EXAMPLES[:3]:
+                            btn = gr.Button(ex, size="sm", variant="secondary")
+                            btn.click(fn=lambda t=ex: t, outputs=[msg_box])
+                    with gr.Column(scale=1):
+                        for ex in _EXAMPLES[3:]:
+                            btn = gr.Button(ex, size="sm", variant="secondary")
+                            btn.click(fn=lambda t=ex: t, outputs=[msg_box])
+
+                gr.HTML(_DISCLAIMER_MD)
+
+        with gr.Tab("🧭 Therapy Landscape"):
+            with gr.Column(elem_classes="container"):
+                gr.Markdown(
+                    "### 🧭 Experimental ALS Therapy Landscape\n"
+                    "Explore experimental therapies by **mechanism class → therapy → clinical trials** "
+                    "(recruiting & closed). Click a wedge to zoom; use the selectors for trial details."
+                )
+                if _landscape is None:
+                    gr.Markdown(
+                        "*Landscape not built yet — run `uv run python scripts/build_landscape.py`.*"
+                    )
+                else:
+                    _init_class = _landscape_classes[0]
+                    _init_labels = landscape_mod.therapy_labels(_landscape, _init_class)
+                    _init_label = _init_labels[0] if _init_labels else None
+
+                    sunburst = gr.Plot(landscape_mod.build_sunburst(_landscape), show_label=False)
+
+                    phase_cb = gr.CheckboxGroup(
+                        choices=landscape_mod.PHASE_OPTIONS, value=landscape_mod.PHASE_OPTIONS,
+                        label="Filter by trial phase",
+                        info="Show therapies with a trial in the selected phase(s). All selected = the whole picture.",
+                    )
+
+                    with gr.Row():
+                        class_dd = gr.Dropdown(
+                            choices=_landscape_classes, value=_init_class,
+                            label="Mechanism class", scale=1,
+                        )
+                        therapy_dd = gr.Dropdown(
+                            choices=_init_labels, value=_init_label,
+                            label="Therapy", scale=1,
+                        )
+
+                    detail_md = gr.Markdown(
+                        landscape_mod.therapy_detail_md(_landscape, _init_class, _init_label or "")
+                    )
+                    trials_html = gr.HTML(
+                        landscape_mod.trials_table_html(_landscape, _init_class, _init_label or "")
+                    )
+
+                    class_dd.change(
+                        _landscape_select, inputs=[class_dd, phase_cb],
+                        outputs=[therapy_dd, detail_md, trials_html],
+                    )
+                    therapy_dd.change(
+                        _therapy_select, inputs=[class_dd, therapy_dd],
+                        outputs=[detail_md, trials_html],
+                    )
+                    phase_cb.change(
+                        _phase_change, inputs=[phase_cb, class_dd],
+                        outputs=[sunburst, therapy_dd, detail_md, trials_html],
+                    )
+
+                gr.HTML(_DISCLAIMER_MD)
 
     submit_kwargs = dict(
         fn=respond,
