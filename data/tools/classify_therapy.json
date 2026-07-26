@@ -1,0 +1,58 @@
+{
+  "type": "object",
+  "properties": {
+    "therapy_key": {
+      "type": "string",
+      "description": "Echo back verbatim the therapy_key given for this therapy in the prompt."
+    },
+    "canonical_name": {
+      "type": "string",
+      "description": "Most recognizable canonical name for this therapy. Merge development codes and synonyms to the common name (e.g., 'MCI-186' and 'MT-1186' -> 'Edaravone')."
+    },
+    "aliases": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Other names or development codes for this therapy seen across its trials."
+    },
+    "modality": {
+      "type": "string",
+      "enum": ["Small molecule", "Antisense oligonucleotide", "Biologic/Antibody", "Cell therapy", "Gene therapy", "Peptide", "Dietary supplement", "Combination", "Other"],
+      "description": "Therapeutic modality."
+    },
+    "target": {
+      "type": "string",
+      "description": "Primary molecular/biological target (e.g., 'SOD1 mRNA', 'AMPA receptor'). Use 'Unknown' if it cannot be determined from the provided evidence."
+    },
+    "mechanisms": {
+      "type": "array",
+      "description": "All ALS mechanism classes this therapy is proposed to act through, each supported by a direct quote from the provided evidence. MULTI-LABEL: include every well-supported class. If the evidence does not establish any mechanism, return an EMPTY array (abstain) rather than guessing.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "class": {
+            "type": "string",
+            "enum": ["TDP-43 proteinopathy", "SOD1", "C9orf72", "FUS", "Neuroinflammation", "Oxidative stress", "Mitochondrial dysfunction", "Glutamate excitotoxicity", "Proteostasis / autophagy", "RNA metabolism", "Neurotrophic / regenerative", "Symptomatic / Other"],
+            "description": "The mechanism class from the ALS taxonomy."
+          },
+          "role": {
+            "type": "string",
+            "enum": ["primary", "contributing"],
+            "description": "Whether this is the therapy's primary mechanism or a secondary/contributing one."
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0.0,
+            "maximum": 1.0,
+            "description": "Confidence that this therapy acts through this mechanism, based ONLY on the provided evidence (1.0 = well-established, 0.4 = weak/inferred)."
+          },
+          "evidence_quote": {
+            "type": "string",
+            "description": "A short verbatim quote from the provided evidence that supports this mechanism. Required — if you cannot quote supporting evidence, do not include this mechanism."
+          }
+        },
+        "required": ["class", "role", "confidence", "evidence_quote"]
+      }
+    }
+  },
+  "required": ["therapy_key", "canonical_name", "modality", "target", "mechanisms"]
+}

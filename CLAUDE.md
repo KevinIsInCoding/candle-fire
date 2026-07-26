@@ -36,9 +36,10 @@ Candle-fire is a physician-facing ALS research intelligence tool. A physician as
 | `rag/indexer.py` | Build ChromaDB collection; section-aware chunking; `citation_count` in metadata |
 | `rag/retriever.py` | `search()`, `search_by_entities()`, citation-weighted re-ranking |
 | `agents/research_agent.py` | Multi-step synthesis agent (streaming): entity extraction → KG expansion → RAG → synthesis |
-| `app.py` | Gradio UI: loads graph + ChromaDB once at startup, streams responses |
+| `app.py` | Gradio UI (tabbed: Ask + Therapy Landscape): loads graph + ChromaDB + landscape once at startup |
+| `landscape.py` | Therapy Landscape rendering: Plotly sunburst + detail-panel HTML from `landscape.json` |
 | `main.py` | CLI interface (Rich console) |
-| `scripts/` | Offline pipeline scripts: run once in order (ingest → extract → build_graph → build_index) |
+| `scripts/` | Offline pipeline scripts: run once in order (ingest → extract → build_graph → build_index → build_landscape) |
 
 ## Offline Pipeline Run Order
 
@@ -60,7 +61,10 @@ uv run python scripts/build_graph.py
 # 5. Build ChromaDB vector index
 uv run python scripts/build_index.py
 
-# 6. run application
+# 6. Build the experimental therapy landscape (offline LLM classification via Batch API)
+uv run python scripts/build_landscape.py
+
+# 7. run application
 uv run gradio app.py
 ```
 
@@ -83,6 +87,9 @@ data/graph/als_graph.pkl          — NetworkX DiGraph (fast load)
 data/graph/als_graph.json         — human-readable graph export
 data/chroma/                      — ChromaDB SQLite store
 data/tools/                       — Claude tool input schemas (JSON)
+data/seeds/therapy_classes.json   — ALS mechanism taxonomy for the therapy landscape
+data/seeds/therapy_gold.json      — gold-labeled therapies for classifier eval/calibration
+data/landscape/landscape.json     — experimental therapy landscape (offline-built, committed to git)
 ```
 
 ## Environment Variables
