@@ -23,6 +23,18 @@ GRAPH_JSON_PATH = DATA_DIR / "graph" / "als_graph.json"
 CHROMA_DIR = DATA_DIR / "chroma"
 CHROMA_COLLECTION = "als_papers"
 
+# Experimental therapy landscape (offline-built, committed to git — small)
+LANDSCAPE_PATH = DATA_DIR / "landscape" / "landscape.json"
+LANDSCAPE_PROGRESS_PATH = DATA_DIR / "landscape" / ".progress.json"
+LANDSCAPE_BATCH_STATE_PATH = DATA_DIR / "landscape" / ".batch_state.json"
+THERAPY_CLASSES_PATH = DATA_DIR / "seeds" / "therapy_classes.json"
+THERAPY_GOLD_PATH = DATA_DIR / "seeds" / "therapy_gold.json"
+# Mechanism classification (v2): frontier model, grounded + multi-label + abstaining.
+LANDSCAPE_MODEL = "claude-opus-4-8"
+LANDSCAPE_MIN_CONFIDENCE = 0.55   # τ — drop LLM mechanisms below this confidence
+LANDSCAPE_XCHECK_MIN_COSINE = 0.20  # BioLORD guard: drop a mechanism whose justification↔class cosine is below this (loose; catches gross mismatch)
+LANDSCAPE_EVIDENCE_ABSTRACTS = 4  # top abstracts retrieved per therapy as MoA evidence
+
 # Seed entity files
 MANUAL_SEEDS_PATH = DATA_DIR / "seeds" / "manual_seeds.json"
 DERIVED_SEEDS_PATH = DATA_DIR / "seeds" / "derived_seeds.json"
