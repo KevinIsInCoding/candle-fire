@@ -101,7 +101,7 @@ _kg_nodes = _graph.number_of_nodes() if _graph else 0
 import landscape as landscape_mod
 
 _landscape = landscape_mod.load_landscape()
-_landscape_classes = landscape_mod.class_names(_landscape)
+_mech_options = landscape_mod.mechanism_filter_options(_landscape)
 
 # ── Example questions ─────────────────────────────────────────────────────────
 
@@ -173,27 +173,22 @@ Always verify claims with primary sources before applying to patient care.
 </div>"""
 
 
-def _landscape_select(class_name: str, phases):
-    """When the class (or phase filter) changes: repopulate therapies and show the first one's detail."""
-    labels = landscape_mod.therapy_labels(_landscape, class_name, phases)
+def _refresh(status: str, phases: list, mech: str):
+    """Any filter changed: redraw the wheel (rings = selected phases, narrowed by mechanism)."""
+    labels = landscape_mod.compound_labels(_landscape, mech, status, phases)
     first = labels[0] if labels else None
     return (
+        landscape_mod.build_pipeline_svg(_landscape, status, phases, mech),
         gr.update(choices=labels, value=first),
-        landscape_mod.therapy_detail_md(_landscape, class_name, first or ""),
-        landscape_mod.trials_table_html(_landscape, class_name, first or ""),
+        landscape_mod.compound_detail_md(_landscape, first or ""),
+        landscape_mod.compound_trials_html(_landscape, first or ""),
     )
 
 
-def _phase_change(phases, class_name: str):
-    """Phase filter: rebuild the sunburst and repopulate the current class's therapies."""
-    therapy_update, detail, trials = _landscape_select(class_name, phases)
-    return (landscape_mod.build_sunburst(_landscape, phases), therapy_update, detail, trials)
-
-
-def _therapy_select(class_name: str, therapy_label: str):
+def _compound_change(label: str):
     return (
-        landscape_mod.therapy_detail_md(_landscape, class_name, therapy_label),
-        landscape_mod.trials_table_html(_landscape, class_name, therapy_label),
+        landscape_mod.compound_detail_md(_landscape, label),
+        landscape_mod.compound_trials_html(_landscape, label),
     )
 
 
@@ -250,55 +245,64 @@ with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
         with gr.Tab("🧭 Therapy Landscape"):
             with gr.Column(elem_classes="container"):
                 gr.Markdown(
-                    "### 🧭 Experimental ALS Therapy Landscape\n"
-                    "Explore experimental therapies by **mechanism class → therapy → clinical trials** "
-                    "(recruiting & closed). Click a wedge to zoom; use the selectors for trial details."
+                    "### 🧭 ALS Therapeutic Pipeline by Clinical Trial Phase\n"
+                    "Mechanism groups are **sectors**; the three trial phases are **concentric "
+                    "rings** (inner = Phase 1, outer = Phase 3). Each **dot is a compound** — "
+                    "hover to see its name; **grey dots** have no recruiting/active trial. Use the "
+                    "filters to narrow the wheel, and pick a **mechanism** to see its compounds' "
+                    "pipeline stage, evidence confidence, and trials."
                 )
                 if _landscape is None:
                     gr.Markdown(
                         "*Landscape not built yet — run `uv run python scripts/build_landscape.py`.*"
                     )
                 else:
-                    _init_class = _landscape_classes[0]
-                    _init_labels = landscape_mod.therapy_labels(_landscape, _init_class)
+                    _init_mech = landscape_mod.ALL_MECHANISMS
+                    _init_labels = landscape_mod.compound_labels(_landscape, _init_mech)
                     _init_label = _init_labels[0] if _init_labels else None
 
-                    sunburst = gr.Plot(landscape_mod.build_sunburst(_landscape), show_label=False)
+                    with gr.Row():
+                        status_dd = gr.Dropdown(
+                            choices=landscape_mod.STATUS_FILTER_OPTIONS, value="All trials",
+                            label="Recruitment status", scale=1,
+                            info="Filter the wheel to compounds with a recruiting trial (or without one).",
+                        )
+                        phase_cb = gr.CheckboxGroup(
+                            choices=landscape_mod.PHASE_RINGS, value=landscape_mod.PHASE_RINGS,
+                            label="Trial phase", scale=1,
+                            info="Each checked phase is drawn as a ring (inner → outer).",
+                        )
+                        mech_dd = gr.Dropdown(
+                            choices=_mech_options, value=_init_mech,
+                            label="Mechanism", scale=1,
+                            info="Narrow the wheel to a single mechanism.",
+                        )
 
-                    phase_cb = gr.CheckboxGroup(
-                        choices=landscape_mod.PHASE_OPTIONS, value=landscape_mod.PHASE_OPTIONS,
-                        label="Filter by trial phase",
-                        info="Show therapies with a trial in the selected phase(s). All selected = the whole picture.",
+                    wheel_html = gr.HTML(
+                        landscape_mod.build_pipeline_svg(
+                            _landscape, "All trials", landscape_mod.PHASE_RINGS, _init_mech)
                     )
 
-                    with gr.Row():
-                        class_dd = gr.Dropdown(
-                            choices=_landscape_classes, value=_init_class,
-                            label="Mechanism class", scale=1,
-                        )
-                        therapy_dd = gr.Dropdown(
-                            choices=_init_labels, value=_init_label,
-                            label="Therapy", scale=1,
-                        )
+                    compound_dd = gr.Dropdown(
+                        choices=_init_labels, value=_init_label,
+                        label="Compound — pipeline stage, evidence confidence & trials below",
+                    )
 
                     detail_md = gr.Markdown(
-                        landscape_mod.therapy_detail_md(_landscape, _init_class, _init_label or "")
+                        landscape_mod.compound_detail_md(_landscape, _init_label or "")
                     )
                     trials_html = gr.HTML(
-                        landscape_mod.trials_table_html(_landscape, _init_class, _init_label or "")
+                        landscape_mod.compound_trials_html(_landscape, _init_label or "")
                     )
 
-                    class_dd.change(
-                        _landscape_select, inputs=[class_dd, phase_cb],
-                        outputs=[therapy_dd, detail_md, trials_html],
-                    )
-                    therapy_dd.change(
-                        _therapy_select, inputs=[class_dd, therapy_dd],
+                    for _f in (status_dd, phase_cb, mech_dd):
+                        _f.change(
+                            _refresh, inputs=[status_dd, phase_cb, mech_dd],
+                            outputs=[wheel_html, compound_dd, detail_md, trials_html],
+                        )
+                    compound_dd.change(
+                        _compound_change, inputs=[compound_dd],
                         outputs=[detail_md, trials_html],
-                    )
-                    phase_cb.change(
-                        _phase_change, inputs=[phase_cb, class_dd],
-                        outputs=[sunburst, therapy_dd, detail_md, trials_html],
                     )
 
                 gr.HTML(_DISCLAIMER_MD)
