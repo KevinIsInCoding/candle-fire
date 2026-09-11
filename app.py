@@ -56,7 +56,8 @@ def _ensure_data() -> None:
     """
     need_chroma = not (CHROMA_DIR / "chroma.sqlite3").exists()
     need_graph = not GRAPH_PICKLE_PATH.exists()
-    if not need_chroma and not need_graph:
+    need_trials = not TRIALS_PATH.exists()
+    if not need_chroma and not need_graph and not need_trials:
         return
     try:
         from huggingface_hub import hf_hub_download, snapshot_download
@@ -82,6 +83,14 @@ def _ensure_data() -> None:
                 filename="graph/als_graph.pkl", local_dir=str(GRAPH_PICKLE_PATH.parent.parent),
             )
             _logger.info("Graph download complete")
+        if need_trials:
+            _logger.info("Downloading trials from HF dataset...")
+            TRIALS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            hf_hub_download(
+                repo_id=_HF_DATASET, repo_type="dataset",
+                filename="trials/trials.jsonl", local_dir=str(TRIALS_PATH.parent.parent),
+            )
+            _logger.info("Trials download complete")
     except Exception as e:
         _logger.warning(f"Failed to download data from HF dataset: {e}")
 
@@ -190,6 +199,32 @@ def _compound_change(label: str):
         landscape_mod.compound_detail_md(_landscape, label),
         landscape_mod.compound_trials_html(_landscape, label),
     )
+
+
+# ── Clinical Trials tab (facility / geography search) ─────────────────────────
+
+import trials_query
+
+_TRIAL_ENRICH_CAP = 25
+_US_STATES = ["All"] + sorted(set(trials_query._STATE_ABBREV.values()))
+
+
+def _search_trials(facility: str, state: str, city: str, status: str) -> str:
+    facility = (facility or "").strip() or None
+    city = (city or "").strip() or None
+    state = None if (not state or state == "All") else state
+
+    if not any([facility, city, state]):
+        return '<div style="color:#888;padding:12px 0;">Enter a facility, state, or city to search.</div>'
+
+    matches = trials_query.search_trials_by_location(
+        _trials, facility=facility, city=city, state=state, status=status
+    )
+    enriched = [
+        trials_query.enrich_trial(t, _collection, _graph, _trials)
+        for t in matches[:_TRIAL_ENRICH_CAP]
+    ]
+    return trials_query.render_trials_html(enriched, len(matches))
 
 
 with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
@@ -304,6 +339,39 @@ with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
                         _compound_change, inputs=[compound_dd],
                         outputs=[detail_md, trials_html],
                     )
+
+                gr.HTML(_DISCLAIMER_MD)
+
+        with gr.Tab("🏥 Clinical Trials"):
+            with gr.Column(elem_classes="container"):
+                gr.Markdown(
+                    "### 🏥 Find ALS Trials by Facility or Geography\n"
+                    "Search the trial database by **facility** (e.g. *Mass General Hospital*) or "
+                    "**location** (state / city). Each result is enriched with recruiting status, an "
+                    "evidence-strength tier, key supporting papers, and related trials for the same compound."
+                )
+                with gr.Row():
+                    facility_tb = gr.Textbox(
+                        label="Facility / institution", scale=2,
+                        placeholder="e.g. Mass General Hospital",
+                    )
+                    state_dd = gr.Dropdown(
+                        choices=_US_STATES, value="All", label="State", scale=1,
+                    )
+                    city_tb = gr.Textbox(label="City", scale=1, placeholder="e.g. Boston")
+                    trial_status_dd = gr.Dropdown(
+                        choices=["All", "Recruiting", "Not recruiting"],
+                        value="All", label="Recruitment status", scale=1,
+                    )
+                search_btn = gr.Button("Search trials", variant="primary")
+                trial_results = gr.HTML(
+                    '<div style="color:#888;padding:12px 0;">Enter a facility, state, or city to search.</div>'
+                )
+
+                _trial_search_inputs = [facility_tb, state_dd, city_tb, trial_status_dd]
+                search_btn.click(_search_trials, inputs=_trial_search_inputs, outputs=[trial_results])
+                facility_tb.submit(_search_trials, inputs=_trial_search_inputs, outputs=[trial_results])
+                city_tb.submit(_search_trials, inputs=_trial_search_inputs, outputs=[trial_results])
 
                 gr.HTML(_DISCLAIMER_MD)
 
