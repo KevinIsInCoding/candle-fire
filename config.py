@@ -23,6 +23,11 @@ GRAPH_JSON_PATH = DATA_DIR / "graph" / "als_graph.json"
 CHROMA_DIR = DATA_DIR / "chroma"
 CHROMA_COLLECTION = "als_papers"
 
+# Runtime data lives OUTSIDE git (see .gitignore) and is served from a HF dataset repo:
+# scripts/upload_data.py pushes it there, app._ensure_data() pulls it on Space startup.
+# Both sides read this one constant so the upload/download targets can never drift.
+HF_DATASET_REPO = "KevinIsCoding/candle-fire-data"
+
 # Experimental therapy landscape (offline-built, committed to git — small)
 LANDSCAPE_PATH = DATA_DIR / "landscape" / "landscape.json"
 LANDSCAPE_PROGRESS_PATH = DATA_DIR / "landscape" / ".progress.json"
