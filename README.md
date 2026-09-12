@@ -76,6 +76,39 @@ uv run python app.py
 uv run python main.py "What is the evidence for tofersen targeting SOD1?"
 ```
 
+## Deploy to Hugging Face
+
+Deployment uses **two repos**, because runtime data is kept separate from code:
+
+| Repo | Holds | Shipped by |
+|---|---|---|
+| Space `KevinIsCoding/candle-fire` (git remote `hf`) | **Code** + small committed data (`landscape.json`, seeds, tool schemas) | `git push hf main` |
+| Dataset `KevinIsCoding/candle-fire-data` | **Large runtime data** — ChromaDB index, graph pickle, `trials.jsonl` (all gitignored) | `scripts/upload_data.py` |
+
+The large data is gitignored (see `.gitignore`) and never travels with the code. On startup the Space pulls it from the dataset repo via `app._ensure_data()`. The Space has **no persistent storage**, so every restart is a clean cold start that re-downloads this data — which means the dataset repo must always hold the current files.
+
+**Deploy in this order (data first, then code):**
+
+```bash
+# 0. Merge the approved PR into main and sync locally
+git checkout main && git pull origin main
+
+# 1. Push runtime data to the dataset repo (REQUIRED before the code push)
+#    Needs a HF token with write access: `huggingface-cli login` or HF_TOKEN env var.
+uv run python scripts/upload_data.py            # uploads chroma/, graph, trials.jsonl
+uv run python scripts/upload_data.py --dry-run  # preview targets + sizes, no writes
+uv run python scripts/upload_data.py --only trials   # push just one target
+
+# 2. Deploy the code (triggers the Space rebuild)
+git push hf main
+```
+
+> **Why data first:** the Space cold-starts on rebuild and immediately fetches data from the
+> dataset repo. If you push code before uploading data, the Space can boot against stale or
+> missing files — e.g. a missing `trials.jsonl` silently disables trial search. Always run
+> `upload_data.py` before `git push hf main`. The upload/download target is a single constant
+> (`config.HF_DATASET_REPO`) shared by the script and the app, so they can't drift.
+
 ## Architecture
 
 ```

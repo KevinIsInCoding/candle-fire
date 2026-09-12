@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from agents.research_agent import stream_research_agent
-from config import CHROMA_COLLECTION, CHROMA_DIR, GRAPH_PICKLE_PATH, TRIALS_PATH
+from config import CHROMA_COLLECTION, CHROMA_DIR, GRAPH_PICKLE_PATH, HF_DATASET_REPO, TRIALS_PATH
 from logging_config import get_logger
 from rag.indexer import load_collection
 
@@ -45,7 +45,7 @@ def _load_collection():
         return None
 
 
-_HF_DATASET = "KevinIsCoding/candle-fire-data"
+_HF_DATASET = HF_DATASET_REPO
 
 
 def _ensure_data() -> None:
