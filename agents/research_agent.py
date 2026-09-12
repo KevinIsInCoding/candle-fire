@@ -476,8 +476,12 @@ def _handle_trials_by_location(
     country = tool_input.get("country") or None
     status = tool_input.get("status") or None
 
+    # Auto-fix city typos/abbreviations (search resolved city); suggest a facility correction.
+    loc = trials_query.resolve_location(trials, facility=facility, city=city)
+    search_city = loc["city"]
+
     matches = trials_query.search_trials_by_location(
-        trials, facility=facility, city=city, state=state, country=country, status=status
+        trials, facility=facility, city=search_city, state=state, country=country, status=status
     )
 
     enriched = [
@@ -485,7 +489,7 @@ def _handle_trials_by_location(
         for t in matches[:_LOCATION_ENRICH_CAP]
     ]
 
-    where_parts = [p for p in (facility, city, state, country) if p]
+    where_parts = [p for p in (facility, search_city, state, country) if p]
     where = ", ".join(where_parts) or "the requested location"
 
     _logger.info(
@@ -513,11 +517,21 @@ def _handle_trials_by_location(
             "sibling_trials as related trials for the same compound. Do not add trials not listed here."
         )
 
+    if loc["city_note"]:
+        grounding_note += (f" NOTE: the city query was auto-corrected — {loc['city_note']}. "
+                           "Tell the physician which city was actually searched.")
+    if loc["facility_suggestion"]:
+        grounding_note += (f" NOTE: no site matched the facility \"{facility}\"; the closest known "
+                           f"facility is \"{loc['facility_suggestion']}\". Ask the physician whether "
+                           "they meant that facility rather than inventing results.")
+
     return {
         "location_query": {
-            "facility": facility, "city": city, "state": state,
+            "facility": facility, "city": search_city, "state": state,
             "country": country, "status": status,
         },
+        "city_note": loc["city_note"],
+        "facility_suggestion": loc["facility_suggestion"],
         "match_count": len(matches),
         "trials": enriched,
         "grounding_note": grounding_note,

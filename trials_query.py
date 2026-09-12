@@ -13,6 +13,8 @@ import json
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
+from rapidfuzz import fuzz, process
+
 from logging_config import get_logger
 
 if TYPE_CHECKING:
@@ -81,6 +83,90 @@ def _facility_matches(query: str, site_facility: str) -> bool:
         return False
     site_tokens = _tokens(site_facility)
     return all(any(q in st for st in site_tokens) for q in q_tokens)
+
+
+# ── Fuzzy location resolution (typo / abbreviation tolerance) ─────────────────
+# City search AUTO-fixes abbreviations + typos (transparent note); facility search only
+# SUGGESTS a correction (never silently redirects — facilities share names across cities).
+# rapidfuzz thresholds calibrated on real typos: genuine city typos score ≥71 on fuzz.ratio
+# while unrelated cities top out ~50; facility typos score ≥74 on WRatio. Fuzzy is a fallback
+# only — exact/substring matches (the fast path) never reach it. No LLM: fully offline.
+
+# Common city abbreviations fuzzy edit-distance can't reach (checked before substring match).
+_CITY_ABBREV = {
+    "nyc": "New York", "sf": "San Francisco", "philly": "Philadelphia",
+    "nola": "New Orleans", "bmore": "Baltimore", "vegas": "Las Vegas", "dc": "Washington",
+}
+_CITY_FUZZY_MIN_RATIO = 75.0      # fuzz.ratio floor for auto-fixing a city typo
+_FACILITY_FUZZY_MIN_WRATIO = 74.0  # fuzz.WRatio floor for suggesting a facility
+
+
+def _distinct_site_values(trials: list[dict], key: str) -> dict[str, str]:
+    """{lowercased: display} for a location field across every trial site."""
+    seen: dict[str, str] = {}
+    for t in trials:
+        for s in t.get("locations", []):
+            v = (s.get(key) or "").strip()
+            if v:
+                seen.setdefault(v.lower(), v)
+    return seen
+
+
+def _resolve_city(city: str, trials: list[dict]) -> tuple[str, str | None]:
+    """Return (city_to_search, note). Auto-fixes abbreviations then typos; note is shown to
+    the user so an auto-applied correction is never silent. Original city is kept if it
+    already matches (substring) or nothing scores above the floor."""
+    q = city.strip()
+    ql = q.lower()
+    if not q:
+        return city, None
+    # 1. Known abbreviation → expand (before substring, which would mis-hit e.g. 'la' in Atlanta)
+    if ql in _CITY_ABBREV:
+        resolved = _CITY_ABBREV[ql]
+        return resolved, f'Interpreted "{q}" as {resolved}'
+    cities = _distinct_site_values(trials, "city")
+    # 2. Already a substring of a real site city → keep (current behavior handles it)
+    if any(ql in c for c in cities):
+        return city, None
+    # 3. Fuzzy typo → auto-apply with a note
+    if len(ql) >= 4 and cities:
+        m = process.extractOne(q, list(cities.values()), scorer=fuzz.ratio)
+        if m and m[1] >= _CITY_FUZZY_MIN_RATIO and m[0].lower() != ql:
+            return m[0], f'Interpreted "{q}" as {m[0]}'
+    return city, None
+
+
+def _suggest_facility(facility: str, trials: list[dict]) -> str | None:
+    """A 'did you mean' facility name when the query matches no site — SUGGEST only, never
+    applied (a wrong facility could point at a same-named site in a different city)."""
+    q = facility.strip()
+    if not q:
+        return None
+    if any(_facility_matches(q, s.get("facility", ""))
+           for t in trials for s in t.get("locations", [])):
+        return None  # already matches something — no suggestion needed
+    facilities = _distinct_site_values(trials, "facility")
+    if not facilities:
+        return None
+    m = process.extractOne(q, list(facilities.values()), scorer=fuzz.WRatio)
+    if m and m[1] >= _FACILITY_FUZZY_MIN_WRATIO and _norm_alnum(m[0]) != _norm_alnum(q):
+        return m[0]
+    return None
+
+
+def resolve_location(
+    trials: list[dict], *, facility: str | None = None, city: str | None = None,
+) -> dict:
+    """Resolve fuzzy facility/city input before search.
+
+    Returns {"city": <city to search with>, "city_note": <str|None>,
+             "facility_suggestion": <str|None>}. City corrections are auto-applied (and
+    reported via city_note); facility corrections are suggestions only — the caller keeps
+    searching the original facility and surfaces facility_suggestion for the user to re-run.
+    """
+    resolved_city, city_note = _resolve_city(city, trials) if city else (city, None)
+    suggestion = _suggest_facility(facility, trials) if facility else None
+    return {"city": resolved_city, "city_note": city_note, "facility_suggestion": suggestion}
 
 
 def _site_matches(

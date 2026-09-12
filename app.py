@@ -217,14 +217,30 @@ def _search_trials(facility: str, state: str, city: str, status: str) -> str:
     if not any([facility, city, state]):
         return '<div style="color:#888;padding:12px 0;">Enter a facility, state, or city to search.</div>'
 
+    # Auto-fix city typos/abbreviations; suggest (don't apply) a facility correction.
+    loc = trials_query.resolve_location(_trials, facility=facility, city=city)
+
     matches = trials_query.search_trials_by_location(
-        _trials, facility=facility, city=city, state=state, status=status
+        _trials, facility=facility, city=loc["city"], state=state, status=status
     )
     enriched = [
         trials_query.enrich_trial(t, _collection, _graph, _trials)
         for t in matches[:_TRIAL_ENRICH_CAP]
     ]
-    return trials_query.render_trials_html(enriched, len(matches))
+    body = trials_query.render_trials_html(enriched, len(matches))
+
+    notes = []
+    if loc["city_note"]:
+        notes.append(loc["city_note"])
+    if loc["facility_suggestion"]:
+        notes.append(f'No facility match for "{facility}" — did you mean '
+                     f'<b>{loc["facility_suggestion"]}</b>? Search that name to see its trials.')
+    if notes:
+        banner = ('<div style="background:#eef4ff;border:1px solid #cfe0ff;border-radius:8px;'
+                  'padding:8px 12px;margin:6px 0;font-size:0.85rem;color:#2b3a4a;">'
+                  + "<br>".join(notes) + "</div>")
+        return banner + body
+    return body
 
 
 with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
