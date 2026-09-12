@@ -186,7 +186,7 @@ footer { display: none !important; }
 _TITLE_MD = """# 🕯️ Candle-Fire
 ### ALS Research Intelligence for Physicians
 Ask a free-text question about ALS biology, drug targets, or clinical trials.
-Answers are synthesized from ~500 curated ALS papers and enriched by a biomedical knowledge graph.
+Answers are synthesized from a curated ALS research corpus and enriched by a biomedical knowledge graph.
 """
 
 _DISCLAIMER_MD = """<div class="disclaimer">
