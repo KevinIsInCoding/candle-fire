@@ -146,21 +146,21 @@ def search_trials_by_location(
     return results
 
 
-# ── Type-ahead for the facility / city inputs ─────────────────────────────────
-# The physician types and PICKS from a ranked dropdown, rather than the system guessing
-# from a substring (where "new" is ambiguously New York / New Haven / Newport Beach…).
-# Suggestions are drawn from the facility/city names actually present in the trials, ranked
-# by trial-site count (busiest first) so the highest-yield option surfaces first — for cities
-# this is the practical stand-in for "population" and also handles international cities.
+# ── Autocomplete vocabulary for the facility / city combobox inputs ───────────
+# The facility/city fields are typeable comboboxes (gr.Dropdown, filterable): the physician
+# types and PICKS from the attached list, rather than the system guessing from a substring
+# (where "new" is ambiguously New York / New Haven / Newport Beach…). Choices are the names
+# actually present in the trials, ranked by trial-site count (busiest first) so the highest-
+# yield option surfaces first — for cities this is the practical stand-in for "population" and
+# also covers international cities. Gradio filters the preloaded list client-side as you type.
 
-MIN_TYPEAHEAD_CHARS = 3   # start suggesting only after this many characters
-TYPEAHEAD_LIMIT = 10      # max suggestions shown at once
+MIN_AUTOCOMPLETE_CHARS = 3  # client-side gate: the attached list stays hidden until this many chars
 
 
 def build_location_index(trials: list[dict]) -> dict[str, list[tuple[str, int]]]:
     """Distinct facility + city names with their trial-site counts, each sorted busiest first.
 
-    Built once at startup and passed into the suggest_* functions (never rebuilt per keystroke).
+    Built once at startup; feeds location_choices() which becomes the combobox `choices`.
     """
     from collections import Counter
 
@@ -182,46 +182,16 @@ def build_location_index(trials: list[dict]) -> dict[str, list[tuple[str, int]]]
     return {"cities": _ranked(city_counts), "facilities": _ranked(facility_counts)}
 
 
-def _typeahead_choices(
-    query: str, ranked: list[tuple[str, int]], matcher, limit: int,
-) -> list[tuple[str, str]]:
-    """Gradio dropdown (label, value) pairs for a type-ahead query.
+def location_choices(index: dict) -> dict[str, list[tuple[str, str]]]:
+    """Gradio combobox (label, value) choices for cities and facilities, busiest first.
 
-    Empty when the query is too short or exactly equals a known name (nothing to disambiguate —
-    also closes the dropdown right after a selection fills the box). `matcher(query, name)` decides
-    membership; results keep `ranked` order (busiest first). Label carries the site count.
+    Label carries the site count ("New York  ·  100 sites"); value is the clean name used for
+    searching. Order is preserved by Gradio's client-side filter, so ranking holds as you type.
     """
-    q = (query or "").strip()
-    if len(q) < MIN_TYPEAHEAD_CHARS:
-        return []
-    ql = q.lower()
-    if any(ql == name.lower() for name, _ in ranked):
-        return []
-    out: list[tuple[str, str]] = []
-    for name, count in ranked:
-        if matcher(q, name):
-            out.append((f"{name}  ·  {count} site{'s' if count != 1 else ''}", name))
-            if len(out) >= limit:
-                break
-    return out
+    def _fmt(pairs: list[tuple[str, int]]) -> list[tuple[str, str]]:
+        return [(f"{name}  ·  {c} site{'s' if c != 1 else ''}", name) for name, c in pairs]
 
-
-def suggest_cities(query: str, index: dict, limit: int = TYPEAHEAD_LIMIT) -> list[tuple[str, str]]:
-    """Ranked city type-ahead choices (substring match, busiest cities first)."""
-    return _typeahead_choices(
-        query, index.get("cities", []),
-        matcher=lambda q, name: q.lower() in name.lower(),
-        limit=limit,
-    )
-
-
-def suggest_facilities(query: str, index: dict, limit: int = TYPEAHEAD_LIMIT) -> list[tuple[str, str]]:
-    """Ranked facility type-ahead choices (token-substring match: 'mass gen' → Mass General...)."""
-    return _typeahead_choices(
-        query, index.get("facilities", []),
-        matcher=_facility_matches,   # every query token is a substring of some facility token
-        limit=limit,
-    )
+    return {"cities": _fmt(index.get("cities", [])), "facilities": _fmt(index.get("facilities", []))}
 
 
 def _find_supporting_papers(

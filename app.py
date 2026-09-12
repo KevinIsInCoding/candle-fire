@@ -168,6 +168,9 @@ _CSS = """
 .disclaimer { font-size: 0.78rem; color: #888; text-align: center; margin-top: 6px; }
 .status-bar { font-size: 0.82rem; color: #666; text-align: center; margin-bottom: 8px; }
 footer { display: none !important; }
+/* Autocomplete gate: hide a combobox's attached option list until ≥3 chars (see
+   _AUTOCOMPLETE_GATE_JS). The script toggles .ac-hide on the input's wrapper by length. */
+#facility_combo.ac-hide ul, #city_combo.ac-hide ul { display: none !important; }
 """
 
 _TITLE_MD = """# 🕯️ Candle-Fire
@@ -208,23 +211,32 @@ import trials_query
 _TRIAL_ENRICH_CAP = 25
 _US_STATES = ["All"] + sorted(set(trials_query._STATE_ABBREV.values()))
 
-# Facility/city type-ahead vocabulary (built once from the trials' site data).
+# Facility/city autocomplete vocabulary (built once from the trials' site data), ranked
+# busiest-first and formatted as combobox (label, value) choices.
 _LOC_INDEX = trials_query.build_location_index(_trials)
+_LOC_CHOICES = trials_query.location_choices(_LOC_INDEX)
 
-
-def _facility_typeahead(query: str):
-    opts = trials_query.suggest_facilities(query, _LOC_INDEX)
-    return gr.update(choices=opts, visible=bool(opts), value=None)
-
-
-def _city_typeahead(query: str):
-    opts = trials_query.suggest_cities(query, _LOC_INDEX)
-    return gr.update(choices=opts, visible=bool(opts), value=None)
-
-
-def _pick_suggestion(value: str):
-    """A dropdown pick fills its text box and closes the suggestion list."""
-    return value, gr.update(visible=False, value=None)
+# Hide the combobox's attached option list until MIN_AUTOCOMPLETE_CHARS are typed. Gradio has
+# no native min-length gate, so a tiny load-time script toggles a class on the input's wrapper
+# by value length; CSS (_CSS) hides the option <ul> while that class is present. Degrades
+# gracefully — if Gradio's dropdown DOM differs, the combobox still filters from the 1st char.
+_AUTOCOMPLETE_GATE_JS = f"""
+() => {{
+  const MIN = {trials_query.MIN_AUTOCOMPLETE_CHARS};
+  const gate = (id) => {{
+    const root = document.getElementById(id);
+    if (!root) return;
+    const input = root.querySelector('input');
+    if (!input) return;
+    const apply = () => root.classList.toggle('ac-hide', input.value.trim().length < MIN);
+    input.addEventListener('input', apply);
+    input.addEventListener('focus', apply);
+    apply();
+  }};
+  gate('facility_combo');
+  gate('city_combo');
+}}
+"""
 
 
 def _search_trials(facility: str, state: str, city: str, status: str) -> str:
@@ -369,47 +381,38 @@ with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
                     "evidence-strength tier, key supporting papers, and related trials for the same compound."
                 )
                 with gr.Row():
-                    facility_tb = gr.Textbox(
+                    facility_tb = gr.Dropdown(
+                        choices=_LOC_CHOICES["facilities"], value=None,
                         label="Facility / institution", scale=2,
-                        placeholder="type ≥3 letters, then pick a match (e.g. Mass General)",
+                        filterable=True, allow_custom_value=True, elem_id="facility_combo",
+                        info="Type ≥3 letters and pick a match (e.g. Mass General).",
                     )
                     state_dd = gr.Dropdown(
                         choices=_US_STATES, value="All", label="State", scale=1,
                     )
-                    city_tb = gr.Textbox(
+                    city_tb = gr.Dropdown(
+                        choices=_LOC_CHOICES["cities"], value=None,
                         label="City", scale=1,
-                        placeholder="type ≥3 letters, then pick a match",
+                        filterable=True, allow_custom_value=True, elem_id="city_combo",
+                        info="Type ≥3 letters; busiest trial cities first.",
                     )
                     trial_status_dd = gr.Dropdown(
                         choices=["All", "Recruiting", "Not recruiting"],
                         value="All", label="Recruitment status", scale=1,
-                    )
-                with gr.Row():
-                    facility_sug = gr.Dropdown(
-                        label="Matching facilities — pick one", choices=[], value=None,
-                        visible=False, interactive=True, filterable=False, scale=2,
-                    )
-                    city_sug = gr.Dropdown(
-                        label="Matching cities (most trial sites first) — pick one",
-                        choices=[], value=None, visible=False, interactive=True,
-                        filterable=False, scale=1,
                     )
                 search_btn = gr.Button("Search trials", variant="primary")
                 trial_results = gr.HTML(
                     '<div style="color:#888;padding:12px 0;">Enter a facility, state, or city to search.</div>'
                 )
 
-                # Type-ahead: typing populates the matching-suggestion dropdown; picking one
-                # fills the text box (and closes the dropdown). Physician chooses — no guessing.
-                facility_tb.change(_facility_typeahead, inputs=facility_tb, outputs=facility_sug)
-                city_tb.change(_city_typeahead, inputs=city_tb, outputs=city_sug)
-                facility_sug.select(_pick_suggestion, inputs=facility_sug, outputs=[facility_tb, facility_sug])
-                city_sug.select(_pick_suggestion, inputs=city_sug, outputs=[city_tb, city_sug])
-
+                # Facility/city are typeable comboboxes (filterable Dropdowns) — the physician
+                # types and picks from the attached, busiest-first list. No per-keystroke server
+                # event needed; the search reads the selected/typed value directly.
                 _trial_search_inputs = [facility_tb, state_dd, city_tb, trial_status_dd]
                 search_btn.click(_search_trials, inputs=_trial_search_inputs, outputs=[trial_results])
-                facility_tb.submit(_search_trials, inputs=_trial_search_inputs, outputs=[trial_results])
-                city_tb.submit(_search_trials, inputs=_trial_search_inputs, outputs=[trial_results])
+                # Picking a facility/city from its list also runs the search immediately.
+                facility_tb.select(_search_trials, inputs=_trial_search_inputs, outputs=[trial_results])
+                city_tb.select(_search_trials, inputs=_trial_search_inputs, outputs=[trial_results])
 
                 gr.HTML(_DISCLAIMER_MD)
 
@@ -420,6 +423,9 @@ with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
     )
     msg_box.submit(**submit_kwargs)
     send_btn.click(**submit_kwargs)
+
+    # Gate the combobox autocomplete lists to open only after MIN_AUTOCOMPLETE_CHARS.
+    demo.load(js=_AUTOCOMPLETE_GATE_JS)
 
 
 if __name__ == "__main__":
