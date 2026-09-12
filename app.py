@@ -405,6 +405,9 @@ with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
                         label="City", scale=1,
                         filterable=True, allow_custom_value=True, elem_id="city_combo",
                     )
+                # Filters on their own row so the labels/values have full width — no wrapping,
+                # no value running under the chevron.
+                with gr.Row(elem_classes="trial-filters"):
                     study_type_dd = gr.Dropdown(
                         choices=["Interventional", "Expanded Access", "All"],
                         value="Interventional", label="Study type", scale=1,
