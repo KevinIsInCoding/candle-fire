@@ -177,6 +177,9 @@ footer { display: none !important; }
 /* Autocomplete gate: hide a combobox's attached option list until ≥3 chars (see
    _AUTOCOMPLETE_GATE_JS). The script toggles .ac-hide on the input's wrapper by length. */
 #facility_combo.ac-hide ul, #city_combo.ac-hide ul { display: none !important; }
+/* Smaller filter labels so long ones (e.g. "Recruitment status") stay on one line and the
+   dropdown chevron doesn't overlap the text. */
+.trial-filters label span { font-size: 0.78rem !important; white-space: nowrap; }
 """
 
 _TITLE_MD = """# 🕯️ Candle-Fire
@@ -388,7 +391,7 @@ with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
                     "**location** (state / city). Each result is enriched with recruiting status, an "
                     "evidence-strength tier, key supporting papers, and related trials for the same compound."
                 )
-                with gr.Row():
+                with gr.Row(elem_classes="trial-filters"):
                     facility_tb = gr.Dropdown(
                         choices=_LOC_CHOICES["facilities"], value=None,
                         label="Facility / institution", scale=2,
