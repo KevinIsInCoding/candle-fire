@@ -161,6 +161,35 @@ _CLASS_TO_GROUP = {
 
 _DOT_CAP = 12  # max dots drawn per sector×ring cell (real counts live in hover/summary)
 
+# Instant CSS hover for the wheel — replaces native SVG <title> (whose OS tooltip has a
+# ~1s appearance delay). On hover a dot pops (scale) and shows its name chip immediately;
+# sector wedges show their count chip. Pure CSS: no JS (Gradio's {@html} won't run scripts).
+# Class names are prefixed `wheel-` so the <style> (document-scoped once embedded) can't
+# collide with other `.dot`/`.lbl` classes on the Gradio page.
+_WHEEL_STYLE = (
+    "svg .wheel-dot{cursor:pointer;}"
+    "svg .wheel-dot>circle{transition:transform .07s ease;transform-box:fill-box;"
+    "transform-origin:center;}"
+    "svg .wheel-dot:hover>circle{transform:scale(1.8);stroke-width:1.6;}"
+    "svg .wheel-lbl{opacity:0;transition:opacity .07s ease;pointer-events:none;}"
+    "svg .wheel-dot:hover .wheel-lbl,svg .wheel-wedge:hover .wheel-lbl{opacity:1;}"
+)
+
+
+def _hover_chip(x: float, y: float, text: str, *, dy: float, font: float = 11.0) -> str:
+    """A hidden dark tooltip chip (rect + white text) centered at x, offset vertically by dy.
+
+    Shown instantly via CSS when its parent .wheel-dot / .wheel-wedge is hovered. A solid
+    dark fill stays legible even if a later translucent wedge paints over it.
+    """
+    half_w = max(len(text) * font * 0.30 + 7, 14)
+    return (f'<g class="wheel-lbl">'
+            f'<rect x="{x - half_w:.1f}" y="{y + dy:.1f}" width="{2 * half_w:.1f}" height="17" '
+            f'rx="4" fill="#1f2d3a"/>'
+            f'<text x="{x:.1f}" y="{y + dy + 12:.1f}" text-anchor="middle" '
+            f'font-size="{font}" fill="#fff">{html.escape(text)}</text>'
+            f'</g>')
+
 
 def _group_of(therapy: dict) -> str:
     return _CLASS_TO_GROUP.get(_primary_class(therapy), "Others / Multiple")
@@ -232,8 +261,12 @@ def _cell_dots(cx, cy, r_in, r_out, a0, a1, cells, col) -> str:
         a = aa0 + fa * (aa1 - aa0) + ja
         x, y = _polar_xy(cx, cy, r, a)
         fill = col if active else _INACTIVE_COLOR
-        out.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="5" fill="{fill}" '
-                   f'stroke="#fff" stroke-width="1.3"><title>{html.escape(name)}</title></circle>')
+        out.append(
+            f'<g class="wheel-dot">'
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="5" fill="{fill}" stroke="#fff" stroke-width="1.3"/>'
+            f'{_hover_chip(x, y, name, dy=-27)}'
+            f'</g>'
+        )
     return "".join(out)
 
 
@@ -270,9 +303,11 @@ def build_pipeline_svg(landscape: dict | None, status_filter: str = "All trials"
     mx, my_t, my_b = 116, 46, 70  # margins so perimeter labels aren't clipped
     svg = [f'<svg viewBox="{-mx} {-my_t} {W + 2 * mx} {W + my_t + my_b}" width="100%" '
            f'style="max-width:840px;height:auto;" '
-           'font-family="-apple-system,Segoe UI,Roboto,sans-serif">']
+           'font-family="-apple-system,Segoe UI,Roboto,sans-serif">',
+           f'<style>{_WHEEL_STYLE}</style>']
 
-    labels = []  # perimeter category + exemplar labels, drawn after wedges
+    labels = []     # perimeter category + exemplar labels, drawn after wedges
+    dot_layer = []  # all compound dots, drawn after all wedges so every dot sits on top
     for gi, g in enumerate(groups):
         col = GROUP_COLORS[g]
         center = gi * seg  # group 0 centered at top
@@ -284,10 +319,12 @@ def build_pipeline_svg(landscape: dict | None, status_filter: str = "All trials"
             cnt = len(cells)
             path = _annular_sector_path(cx, cy, ri, ro, a0, a1)
             fillop = 0.13 + 0.05 * i
-            svg.append(f'<path d="{path}" fill="{col}" fill-opacity="{fillop:.2f}" '
-                       f'stroke="#fff" stroke-width="2"><title>{html.escape(g)} — {html.escape(ring)}: '
-                       f'{cnt} compound{"s" if cnt != 1 else ""}</title></path>')
-            svg.append(_cell_dots(cx, cy, ri, ro, a0, a1, cells, col))
+            mrx, mry = _polar_xy(cx, cy, (ri + ro) / 2, (a0 + a1) / 2)
+            chip = _hover_chip(mrx, mry, f'{g} — {ring}: {cnt} compound{"s" if cnt != 1 else ""}',
+                               dy=-8, font=10.5)
+            svg.append(f'<g class="wheel-wedge"><path d="{path}" fill="{col}" '
+                       f'fill-opacity="{fillop:.2f}" stroke="#fff" stroke-width="2"/>{chip}</g>')
+            dot_layer.append(_cell_dots(cx, cy, ri, ro, a0, a1, cells, col))
 
         # perimeter label: category name (wrapped at " / ") + count + top exemplar
         exemplar = next((sorted(grid[g][r], key=lambda c: c[0])[0][0]
@@ -315,6 +352,7 @@ def build_pipeline_svg(landscape: dict | None, status_filter: str = "All trials"
                     f'font-size="10.5" fill="#8a929c">e.g. {html.escape(exemplar[:20])}</text>')
         labels.append(lab)
 
+    svg.extend(dot_layer)  # dots above all wedges
     svg.extend(labels)
 
     # center hub
