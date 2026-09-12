@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Candle-fire is a physician-facing ALS research intelligence tool. A physician asks a free-text question ("What's the evidence for tofersen targeting SOD1?") and gets a synthesized, cited answer grounded in ~500 curated ALS papers, enriched by a knowledge graph.
+Candle-fire is a physician-facing ALS research intelligence tool. A physician asks a free-text question ("What's the evidence for tofersen targeting SOD1?") and gets a synthesized, cited answer grounded in ~10,000 curated ALS papers, enriched by a knowledge graph.
 
 **Sibling project**: beacon (patient-facing clinical trial finder at `../beacon`). Follow the same conventions.
 
@@ -10,7 +10,7 @@ Candle-fire is a physician-facing ALS research intelligence tool. A physician as
 
 1. **Knowledge Graph (KG)**: NetworkX DiGraph linking Gene → Protein → Compound → Pathway → Phenotype → ClinicalTrial. Used to expand query entities before retrieval (e.g., "tofersen" → SOD1 → oxidative stress → related compounds).
 
-2. **RAG (Vector Search)**: ChromaDB collection of ~500 ALS paper abstracts/full-text. Citation-count-weighted re-ranking. Used to retrieve evidence passages for synthesis.
+2. **RAG (Vector Search)**: ChromaDB collection of ~10,000 ALS paper abstracts/full-text. Citation-count-weighted re-ranking. Used to retrieve evidence passages for synthesis.
 
 **Query pipeline**: KG expansion first, then RAG retrieval with expanded entity context, then Claude synthesis.
 
