@@ -112,19 +112,29 @@ def search_trials_by_location(
     state: str | None = None,
     country: str | None = None,
     status: str | None = None,
+    study_type: str | None = None,
 ) -> list[dict]:
     """Return trials with at least one site matching the location filters.
 
     `status`: "Recruiting" keeps only trials with an open overall status; "Not recruiting"
-    keeps only closed ones; anything else (None / "All") keeps all. Each returned trial is a
-    shallow copy with `matched_sites` attached; recruiting trials are ranked first.
+    keeps only closed ones; anything else (None / "All") keeps all.
+    `study_type`: "Interventional" keeps interventional trials; "Expanded Access" keeps
+    expanded-access (investigational-use) programs; anything else (None / "All") keeps both.
+    Each returned trial is a shallow copy with `matched_sites` attached; recruiting first.
     """
     if not any([facility, city, state, country]):
         return []
 
     status_filter = (status or "").strip().lower()
+    type_filter = (study_type or "").strip().lower()
     results: list[dict] = []
     for trial in trials:
+        is_eap = bool(trial.get("is_expanded_access"))
+        if type_filter == "interventional" and is_eap:
+            continue
+        if type_filter == "expanded access" and not is_eap:
+            continue
+
         matched_sites = [
             s for s in trial.get("locations", [])
             if _site_matches(s, facility, city, state, country)
