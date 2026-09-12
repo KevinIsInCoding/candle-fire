@@ -505,8 +505,11 @@ def _handle_trials_by_location(
         grounding_note = (
             f"{len(matches)} ALS trial(s) have a study site matching {where} "
             f"(showing {len(enriched)}). Report them grouped by recruiting status (recruiting "
-            "first). For each, give the NCT ID, phase, matched facility/city/state, evidence tier, "
-            "and cite key_papers by PMID only for claims their titles support. Mention "
+            "first). For each, give the NCT ID, phase, matched facility/city/state, the targeted "
+            "mechanism (when present), and evidence tier. When you state a tier, justify it briefly "
+            "from evidence.rationale (the scoring factors and points behind it, incl. which KG node "
+            "supplied the paper count). Cite key_papers by PMID only for claims "
+            "their titles support. Mention "
             "sibling_trials as related trials for the same compound. Do not add trials not listed here."
         )
 

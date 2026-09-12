@@ -9,6 +9,8 @@ tier, and recruiting status.
 from __future__ import annotations
 
 import html
+import json
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from logging_config import get_logger
@@ -206,45 +208,137 @@ def _find_sibling_trials(
     return siblings[:top_n]
 
 
-def _kg_paper_count(trial: dict, graph: "nx.DiGraph | None") -> int:
-    """Max supporting-paper count across this trial's target entities in the KG."""
+# ── Targeted mechanism (reverse-indexed from the offline therapy landscape) ───
+# A trial's "targeted mechanism" is the dominant mechanism class of the compound it
+# tests, reused from the already-built landscape.json (no LLM at query time). Only
+# landscape-classified compounds get one; unclassified drugs (e.g. brand-new agents
+# whose only extracted target is their own name) map to "" and show no mechanism.
+
+def _primary_class(therapy: dict) -> str:
+    """A compound's dominant mechanism class: primary role, else highest confidence.
+
+    Mirrors landscape._primary_class. Returns "" when the compound has no mechanism
+    (landscape left it unclassified).
+    """
+    mechs = therapy.get("mechanisms") or []
+    if not mechs:
+        return ""
+    pool = [m for m in mechs if m.get("role") == "primary"] or mechs
+    best = max(pool, key=lambda m: m.get("confidence", 0) or 0)
+    return best.get("class", "") or ""
+
+
+@lru_cache(maxsize=1)
+def _mechanism_index() -> dict[str, str]:
+    """Map NCT ID → targeted-mechanism class name, reverse-indexed from landscape.json.
+
+    Classified compounds take precedence over unclassified ones; compounds with no
+    mechanism are skipped. Returns {} when the landscape artifact is absent.
+    """
+    from config import LANDSCAPE_PATH
+
+    if not LANDSCAPE_PATH.exists():
+        return {}
+    try:
+        landscape = json.loads(LANDSCAPE_PATH.read_text())
+    except Exception:
+        _logger.warning("could not load landscape for mechanism index", exc_info=True)
+        return {}
+
+    index: dict[str, str] = {}
+    # classifications first so a classified compound's mechanism wins over unclassified
+    for group in (landscape.get("classifications", []) + landscape.get("unclassified", [])):
+        therapies = group.get("therapies", [group]) if "therapies" in group else [group]
+        for therapy in therapies:
+            mechanism = _primary_class(therapy)
+            if not mechanism:
+                continue
+            for tr in therapy.get("trials", []):
+                index.setdefault(tr.get("nct_id", ""), mechanism)
+    index.pop("", None)
+    return index
+
+
+def _kg_paper_count(
+    trial: dict, graph: "nx.DiGraph | None", mechanism: str = ""
+) -> tuple[int, str]:
+    """Max supporting-paper count in the KG, and the node label that supplied it.
+
+    Considers this trial's target entities plus its targeted `mechanism` hub node, so a
+    compound whose only extracted target is its own name (no KG node) still gets credit
+    for its mechanism's literature instead of scoring 0. The returned label lets the tier
+    show a physician *which* node the count came from (e.g. the mechanism vs. the target).
+    """
     if graph is None:
-        return 0
+        return 0, ""
     from graph.query import _find_node
 
-    best = 0
-    for name in trial.get("target_entities", []):
+    # (name, is_mechanism) — mechanism last so a real target wins ties.
+    names = [(n, False) for n in trial.get("target_entities", [])]
+    if mechanism:
+        names.append((mechanism, True))
+
+    best, best_label = 0, ""
+    for name, is_mech in names:
         for node_id in _find_node(graph, name):
-            best = max(best, graph.nodes[node_id].get("paper_count", 0))
-    return best
+            count = graph.nodes[node_id].get("paper_count", 0)
+            if count > best:
+                best = count
+                display = graph.nodes[node_id].get("display_name", name)
+                best_label = f"{display} (mechanism)" if is_mech else display
+    return best, best_label
 
 
 def _evidence_tier(
     trial: dict,
     key_papers: list[dict],
     kg_paper_count: int,
+    kg_source: str = "",
 ) -> dict:
     """Heuristic evidence-strength tier from paper count, citations, KG breadth, and phase.
 
-    Strong / Moderate / Emerging — a fully offline signal (no LLM call).
+    Strong / Moderate / Emerging — a fully offline signal (no LLM call). Returns a
+    `rationale`: one entry per scoring factor with the points it earned and a physician-
+    readable reason (including *which* KG node supplied the paper count), so the tier can
+    explain itself rather than presenting a bare label.
     """
     n_papers = len(key_papers)
     max_cit = max((p.get("citation_count", 0) for p in key_papers), default=0)
     phase = (trial.get("phase", "") or "").upper()
 
-    points = 0
+    rationale: list[dict] = []
+
+    def factor(label: str, pts: int, detail: str) -> None:
+        rationale.append({"factor": label, "points": pts, "detail": detail})
+
     if n_papers >= 5:
-        points += 2
+        factor("Supporting papers", 2, f"{n_papers} supporting papers in the database (≥5)")
     elif n_papers >= 2:
-        points += 1
+        factor("Supporting papers", 1, f"{n_papers} supporting papers in the database (2–4)")
+    else:
+        factor("Supporting papers", 0, f"{n_papers} supporting paper(s) in the database (<2)")
+
     if max_cit >= 100:
-        points += 2
+        factor("Citation impact", 2, f"top paper cited {max_cit}× (≥100)")
     elif max_cit >= 20:
-        points += 1
+        factor("Citation impact", 1, f"top paper cited {max_cit}× (20–99)")
+    else:
+        factor("Citation impact", 0, f"top paper cited {max_cit}× (<20)")
+
     if kg_paper_count >= 5:
-        points += 1
-    if "PHASE3" in phase.replace(" ", "") or "3" in phase:
-        points += 1
+        src = f" via {kg_source}" if kg_source else ""
+        factor("KG breadth", 1, f"{kg_paper_count} papers on the target/mechanism node{src} (≥5)")
+    else:
+        src = f" (best: {kg_source})" if kg_source else ""
+        factor("KG breadth", 0, f"{kg_paper_count} papers on the target/mechanism node{src} (<5)")
+
+    is_phase3 = "PHASE3" in phase.replace(" ", "") or "3" in phase
+    if is_phase3:
+        factor("Trial phase", 1, f"reached Phase 3 ({trial.get('phase', '')})")
+    else:
+        factor("Trial phase", 0, f"not yet Phase 3 ({trial.get('phase', '') or 'phase unknown'})")
+
+    points = sum(f["points"] for f in rationale)
 
     if points >= 4:
         tier = "Strong"
@@ -255,9 +349,12 @@ def _evidence_tier(
 
     return {
         "tier": tier,
+        "points": points,
         "n_papers": n_papers,
         "max_citations": max_cit,
         "kg_paper_count": kg_paper_count,
+        "kg_source": kg_source,
+        "rationale": rationale,
     }
 
 
@@ -266,12 +363,17 @@ def enrich_trial(
     collection: "chromadb.Collection | None" = None,
     graph: "nx.DiGraph | None" = None,
     all_trials: list[dict] | None = None,
+    mechanism_index: dict[str, str] | None = None,
 ) -> dict:
-    """Attach research-evidence context to a trial: key papers, sibling trials, evidence tier."""
+    """Attach research-evidence context to a trial: targeted mechanism, key papers,
+    sibling trials, evidence tier."""
+    index = _mechanism_index() if mechanism_index is None else mechanism_index
+    mechanism = index.get(trial.get("nct_id", ""), "")
+
     key_papers = _find_supporting_papers(trial, collection)
     sibling_trials = _find_sibling_trials(trial, all_trials or [])
-    kg_paper_count = _kg_paper_count(trial, graph)
-    evidence = _evidence_tier(trial, key_papers, kg_paper_count)
+    kg_paper_count, kg_source = _kg_paper_count(trial, graph, mechanism)
+    evidence = _evidence_tier(trial, key_papers, kg_paper_count, kg_source)
 
     return {
         "nct_id": trial.get("nct_id", ""),
@@ -282,6 +384,7 @@ def enrich_trial(
         "sponsor": trial.get("sponsor", ""),
         "url": trial.get("url", ""),
         "target_entities": trial.get("target_entities", []),
+        "mechanism": mechanism,
         "matched_sites": trial.get("matched_sites", []),
         "key_papers": key_papers,
         "sibling_trials": sibling_trials,
@@ -313,6 +416,31 @@ def _pill(text: str, color: str) -> str:
             f'padding:1px 8px;font-size:0.72rem;white-space:nowrap;">{html.escape(text)}</span>')
 
 
+def _tier_rationale_html(ev: dict) -> str:
+    """A collapsible 'why this tier' breakdown: each scoring factor, its points, and reason.
+
+    Uses a native <details> disclosure (no JS) so a physician can audit the label without
+    it crowding the card by default.
+    """
+    rationale = ev.get("rationale") or []
+    if not rationale:
+        return ""
+    rows = "".join(
+        f'<li style="margin:1px 0;{"" if f["points"] else "color:#aaa;"}">'
+        f'<b>+{f["points"]}</b> {html.escape(f["factor"])} — {html.escape(f["detail"])}</li>'
+        for f in rationale
+    )
+    total = ev.get("points", sum(f["points"] for f in rationale))
+    summary = (f'Why {html.escape(ev.get("tier", ""))}? ({total} pts — '
+               "≥4 Strong · 2–3 Moderate · &lt;2 Emerging)")
+    return (
+        '<details style="margin-top:4px;font-size:0.8rem;color:#555;">'
+        f'<summary style="cursor:pointer;color:#6C5CE7;">{summary}</summary>'
+        f'<ul style="margin:4px 0 0 18px;list-style:none;padding:0;">{rows}</ul>'
+        '</details>'
+    )
+
+
 def render_trials_html(enriched: list[dict], match_count: int) -> str:
     """Render enriched location-search results as an HTML card list."""
     if not enriched:
@@ -326,6 +454,9 @@ def render_trials_html(enriched: list[dict], match_count: int) -> str:
         s_color, s_label = _status_badge(t["status"])
         ev = t["evidence"]
         tier_pill = _pill(f'Evidence: {ev["tier"]}', _TIER_COLOR.get(ev["tier"], "#B2BEC3"))
+        mech = t.get("mechanism", "")
+        mech_pill = _pill(f'Mechanism: {mech}', "#6C5CE7") if mech else ""
+        rationale_html = _tier_rationale_html(ev)
         phase = html.escape((t.get("phase") or "—").replace("PHASE", "Ph"))
         title = html.escape(t.get("title", "")[:140])
         nct = html.escape(t.get("nct_id", ""))
@@ -369,9 +500,10 @@ def render_trials_html(enriched: list[dict], match_count: int) -> str:
         cards.append(
             '<div style="border:1px solid #e3e3e3;border-radius:8px;padding:10px 12px;margin:8px 0;">'
             f'<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px;">'
-            f'{_pill(s_label, s_color)}{tier_pill}'
+            f'{_pill(s_label, s_color)}{tier_pill}{mech_pill}'
             f'<span style="color:#888;font-size:0.78rem;">{phase}</span></div>'
             f'<div style="font-weight:600;">{nct_link} — {title}</div>'
+            f'{rationale_html}'
             f'<div style="margin-top:4px;font-size:0.82rem;color:#555;"><b>Site(s):</b><br>{sites_html}</div>'
             f'{papers_html}{siblings_html}'
             '</div>'
