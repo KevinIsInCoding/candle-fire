@@ -1,6 +1,7 @@
 """Gradio web UI for candle-fire — physician-facing ALS research intelligence."""
 from __future__ import annotations
 
+import html
 import json
 from pathlib import Path
 
@@ -261,6 +262,25 @@ def _search_trials(facility: str, state: str, city: str, study_type: str, status
         _trials, facility=facility, city=city, state=state,
         status=status, study_type=study_type,
     )
+
+    # If the active filters hide everything, say whether broader filters would find trials —
+    # e.g. a facility with only completed studies under the default Recruiting + Interventional.
+    if not matches and (status != "All" or study_type != "All"):
+        broad = trials_query.search_trials_by_location(
+            _trials, facility=facility, city=city, state=state, status="All", study_type="All",
+        )
+        if broad:
+            where = ", ".join(p for p in (facility, city, state) if p)
+            return (
+                '<div style="background:#fff6e5;border:1px solid #ffe0a3;border-radius:8px;'
+                'padding:10px 12px;margin:6px 0;color:#7a5b00;font-size:0.9rem;">'
+                f'No <b>{html.escape((study_type or "").lower())}</b> trials that are '
+                f'<b>{html.escape((status or "").lower())}</b> at {html.escape(where)}. '
+                f'{len(broad)} trial(s) exist there under broader filters — set '
+                '<b>Study type</b> and <b>Recruitment status</b> to <b>All</b> to see them.'
+                '</div>'
+            )
+
     enriched = [
         trials_query.enrich_trial(t, _collection, _graph, _trials)
         for t in matches[:_TRIAL_ENRICH_CAP]

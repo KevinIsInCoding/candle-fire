@@ -168,22 +168,31 @@ MIN_AUTOCOMPLETE_CHARS = 3  # client-side gate: the attached list stays hidden u
 
 
 def build_location_index(trials: list[dict]) -> dict[str, list[tuple[str, int]]]:
-    """Distinct facility + city names with their trial-site counts, each sorted busiest first.
+    """Distinct facility + city names with their TRIAL counts, each sorted busiest first.
 
-    Built once at startup; feeds location_choices() which becomes the combobox `choices`.
+    Counts distinct trials, not site rows: a single trial that lists an anonymized placeholder
+    like "GSK Investigational Site" 49 times counts once, so placeholders don't balloon to the
+    top of the ranking and the shown count matches what a search can return. Built once at
+    startup; feeds location_choices() which becomes the combobox `choices`.
     """
     from collections import Counter
 
     city_counts: Counter = Counter()
     facility_counts: Counter = Counter()
     for t in trials:
+        cities_here: set[str] = set()
+        facilities_here: set[str] = set()
         for s in t.get("locations", []):
             city = (s.get("city") or "").strip()
             facility = (s.get("facility") or "").strip()
             if city:
-                city_counts[city] += 1
+                cities_here.add(city)
             if facility:
-                facility_counts[facility] += 1
+                facilities_here.add(facility)
+        for c in cities_here:
+            city_counts[c] += 1
+        for f in facilities_here:
+            facility_counts[f] += 1
 
     def _ranked(counter: Counter) -> list[tuple[str, int]]:
         # busiest first, then alphabetical for stable ties
@@ -192,16 +201,17 @@ def build_location_index(trials: list[dict]) -> dict[str, list[tuple[str, int]]]
     return {"cities": _ranked(city_counts), "facilities": _ranked(facility_counts)}
 
 
-def location_choices(index: dict) -> dict[str, list[tuple[str, str]]]:
-    """Gradio combobox (label, value) choices for cities and facilities, busiest first.
+def location_choices(index: dict) -> dict[str, list[str]]:
+    """Gradio combobox choices — plain names, busiest first.
 
-    Label carries the site count ("New York  ·  100 sites"); value is the clean name used for
-    searching. Order is preserved by Gradio's client-side filter, so ranking holds as you type.
+    Just the names (no "· N trials" suffix): with a filterable/custom-value Dropdown the
+    displayed option text becomes the field value, so any suffix would leak into the search
+    term. Ranking is preserved by list order; the count is used only for that ordering.
     """
-    def _fmt(pairs: list[tuple[str, int]]) -> list[tuple[str, str]]:
-        return [(f"{name}  ·  {c} site{'s' if c != 1 else ''}", name) for name, c in pairs]
-
-    return {"cities": _fmt(index.get("cities", [])), "facilities": _fmt(index.get("facilities", []))}
+    return {
+        "cities": [name for name, _ in index.get("cities", [])],
+        "facilities": [name for name, _ in index.get("facilities", [])],
+    }
 
 
 def _find_supporting_papers(
