@@ -208,6 +208,24 @@ import trials_query
 _TRIAL_ENRICH_CAP = 25
 _US_STATES = ["All"] + sorted(set(trials_query._STATE_ABBREV.values()))
 
+# Facility/city type-ahead vocabulary (built once from the trials' site data).
+_LOC_INDEX = trials_query.build_location_index(_trials)
+
+
+def _facility_typeahead(query: str):
+    opts = trials_query.suggest_facilities(query, _LOC_INDEX)
+    return gr.update(choices=opts, visible=bool(opts), value=None)
+
+
+def _city_typeahead(query: str):
+    opts = trials_query.suggest_cities(query, _LOC_INDEX)
+    return gr.update(choices=opts, visible=bool(opts), value=None)
+
+
+def _pick_suggestion(value: str):
+    """A dropdown pick fills its text box and closes the suggestion list."""
+    return value, gr.update(visible=False, value=None)
+
 
 def _search_trials(facility: str, state: str, city: str, status: str) -> str:
     facility = (facility or "").strip() or None
@@ -353,20 +371,40 @@ with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
                 with gr.Row():
                     facility_tb = gr.Textbox(
                         label="Facility / institution", scale=2,
-                        placeholder="e.g. Mass General Hospital",
+                        placeholder="type ≥3 letters, then pick a match (e.g. Mass General)",
                     )
                     state_dd = gr.Dropdown(
                         choices=_US_STATES, value="All", label="State", scale=1,
                     )
-                    city_tb = gr.Textbox(label="City", scale=1, placeholder="e.g. Boston")
+                    city_tb = gr.Textbox(
+                        label="City", scale=1,
+                        placeholder="type ≥3 letters, then pick a match",
+                    )
                     trial_status_dd = gr.Dropdown(
                         choices=["All", "Recruiting", "Not recruiting"],
                         value="All", label="Recruitment status", scale=1,
+                    )
+                with gr.Row():
+                    facility_sug = gr.Dropdown(
+                        label="Matching facilities — pick one", choices=[], value=None,
+                        visible=False, interactive=True, filterable=False, scale=2,
+                    )
+                    city_sug = gr.Dropdown(
+                        label="Matching cities (most trial sites first) — pick one",
+                        choices=[], value=None, visible=False, interactive=True,
+                        filterable=False, scale=1,
                     )
                 search_btn = gr.Button("Search trials", variant="primary")
                 trial_results = gr.HTML(
                     '<div style="color:#888;padding:12px 0;">Enter a facility, state, or city to search.</div>'
                 )
+
+                # Type-ahead: typing populates the matching-suggestion dropdown; picking one
+                # fills the text box (and closes the dropdown). Physician chooses — no guessing.
+                facility_tb.change(_facility_typeahead, inputs=facility_tb, outputs=facility_sug)
+                city_tb.change(_city_typeahead, inputs=city_tb, outputs=city_sug)
+                facility_sug.select(_pick_suggestion, inputs=facility_sug, outputs=[facility_tb, facility_sug])
+                city_sug.select(_pick_suggestion, inputs=city_sug, outputs=[city_tb, city_sug])
 
                 _trial_search_inputs = [facility_tb, state_dd, city_tb, trial_status_dd]
                 search_btn.click(_search_trials, inputs=_trial_search_inputs, outputs=[trial_results])
