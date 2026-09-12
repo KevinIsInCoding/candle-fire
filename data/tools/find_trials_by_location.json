@@ -1,0 +1,26 @@
+{
+  "type": "object",
+  "properties": {
+    "facility": {
+      "type": "string",
+      "description": "Hospital, institution, or research-site name mentioned in the question (e.g. 'Mass General Hospital', 'Mayo Clinic'). Provide the name as written; partial names are matched."
+    },
+    "city": {
+      "type": "string",
+      "description": "City name mentioned in the question (e.g. 'Boston')."
+    },
+    "state": {
+      "type": "string",
+      "description": "US state mentioned in the question, as a two-letter abbreviation or full name (e.g. 'NY' or 'New York')."
+    },
+    "country": {
+      "type": "string",
+      "description": "Country mentioned in the question (e.g. 'United States'). Only for non-US or explicitly international queries."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["Recruiting", "Not recruiting", "All"],
+      "description": "Recruitment filter. Use 'Recruiting' when the physician asks for open/enrolling trials; otherwise 'All'."
+    }
+  }
+}

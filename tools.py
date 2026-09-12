@@ -34,6 +34,18 @@ SEARCH_LANDSCAPE_TOOL: anthropic.types.ToolParam = {
     "input_schema": _load("search_landscape"),
 }
 
+FIND_TRIALS_BY_LOCATION_TOOL: anthropic.types.ToolParam = {
+    "name": "find_trials_by_location",
+    "description": (
+        "Find ALS clinical trials by the facility/institution or the geography (state, city, "
+        "or country) where they are conducted. Use this when the physician's question names a "
+        "hospital or research site (e.g. 'trials at Mass General Hospital') or a place (e.g. "
+        "'trials in NY'). Returns matching trials enriched with recruiting status, an evidence-"
+        "strength tier, key supporting papers, and related trials for the same compound."
+    ),
+    "input_schema": _load("find_trials_by_location"),
+}
+
 EXTRACT_TRIAL_TARGETS_TOOL: anthropic.types.ToolParam = {
     "name": "extract_trial_targets",
     "description": (
@@ -55,5 +67,5 @@ CLASSIFY_THERAPY_TOOL: anthropic.types.ToolParam = {
 
 EXTRACTION_TOOLS: list[anthropic.types.ToolParam] = [EXTRACT_ENTITIES_TOOL]
 TRIAL_EXTRACTION_TOOLS: list[anthropic.types.ToolParam] = [EXTRACT_TRIAL_TARGETS_TOOL]
-RESEARCH_TOOLS: list[anthropic.types.ToolParam] = [SEARCH_LANDSCAPE_TOOL]
+RESEARCH_TOOLS: list[anthropic.types.ToolParam] = [SEARCH_LANDSCAPE_TOOL, FIND_TRIALS_BY_LOCATION_TOOL]
 LANDSCAPE_TOOLS: list[anthropic.types.ToolParam] = [CLASSIFY_THERAPY_TOOL]

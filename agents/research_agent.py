@@ -26,6 +26,7 @@ from normalization.drug_vocab import build_drug_vocab, suggest_drug_term
 from prompts import SYNTHESIS_SYSTEM
 from rag import retriever as rag_retriever
 from tools import RESEARCH_TOOLS
+import trials_query
 
 _logger = get_logger("agents.research_agent")
 
@@ -134,6 +135,9 @@ def stream_research_agent(
             for tool_call in tool_calls:
                 if tool_call["name"] == "search_research_landscape":
                     result = _handle_search(tool_call["input"], collection, trials, _graph)
+                    is_error = False
+                elif tool_call["name"] == "find_trials_by_location":
+                    result = _handle_trials_by_location(tool_call["input"], trials, collection, _graph)
                     is_error = False
                 else:
                     result = {"error": f"Unknown tool: {tool_call['name']}"}
@@ -451,5 +455,70 @@ def _handle_search(
         "trials": related_trials,
         "evidence_count": len(paper_pool),
         "kg_expansion_active": graph is not None,
+        "grounding_note": grounding_note,
+    }
+
+
+# Cap enrichment work per location query — each trial triggers RAG retrieval, so bound it.
+_LOCATION_ENRICH_CAP = 25
+
+
+def _handle_trials_by_location(
+    tool_input: dict,
+    trials: list[dict],
+    collection: chromadb.Collection | None = None,
+    graph: nx.DiGraph | None = None,
+) -> dict:
+    """Filter trials by facility/geography and enrich each with research evidence."""
+    facility = tool_input.get("facility") or None
+    city = tool_input.get("city") or None
+    state = tool_input.get("state") or None
+    country = tool_input.get("country") or None
+    status = tool_input.get("status") or None
+
+    matches = trials_query.search_trials_by_location(
+        trials, facility=facility, city=city, state=state, country=country, status=status
+    )
+
+    enriched = [
+        trials_query.enrich_trial(t, collection, graph, trials)
+        for t in matches[:_LOCATION_ENRICH_CAP]
+    ]
+
+    where_parts = [p for p in (facility, city, state, country) if p]
+    where = ", ".join(where_parts) or "the requested location"
+
+    _logger.info(
+        "location trial search",
+        extra={"data": {
+            "facility": facility, "city": city, "state": state, "country": country,
+            "status": status, "matches": len(matches), "enriched": len(enriched),
+        }},
+    )
+
+    if not enriched:
+        grounding_note = (
+            f"No ALS clinical trials in this database have a study site matching {where}. "
+            "State that plainly; do not invent trials or sites."
+        )
+    else:
+        grounding_note = (
+            f"{len(matches)} ALS trial(s) have a study site matching {where} "
+            f"(showing {len(enriched)}). Report them grouped by recruiting status (recruiting "
+            "first). For each, give the NCT ID, phase, matched facility/city/state, the targeted "
+            "mechanism (when present), and evidence tier. When you state a tier, justify it briefly "
+            "from evidence.rationale (the scoring factors and points behind it, incl. which KG node "
+            "supplied the paper count). Cite key_papers by PMID only for claims "
+            "their titles support. Mention "
+            "sibling_trials as related trials for the same compound. Do not add trials not listed here."
+        )
+
+    return {
+        "location_query": {
+            "facility": facility, "city": city, "state": state,
+            "country": country, "status": status,
+        },
+        "match_count": len(matches),
+        "trials": enriched,
         "grounding_note": grounding_note,
     }

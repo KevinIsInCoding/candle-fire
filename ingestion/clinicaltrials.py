@@ -87,6 +87,7 @@ def _flatten_trial(study: dict) -> dict:
     sponsor_mod = proto.get("sponsorCollaboratorsModule", {})
     arms_mod = proto.get("armsInterventionsModule", {})
     status_mod = proto.get("statusModule", {})
+    contacts_mod = proto.get("contactsLocationsModule", {})
 
     nct_id = id_mod.get("nctId", "")
     interventions = [
@@ -96,6 +97,26 @@ def _flatten_trial(study: dict) -> dict:
 
     study_type = design_mod.get("studyType", "")
     is_eap = study_type == "EXPANDED_ACCESS"
+
+    # Site locations — facility, address, per-site recruiting status, and geo point.
+    # Physicians search trials by facility ("Mass General") or place ("in NY"), so this
+    # address data must be persisted in the trials DB (offline; no fetch at query time).
+    locations = [
+        {
+            "facility": (loc.get("facility") or "").strip(),
+            "city": loc.get("city", ""),
+            "state": loc.get("state", ""),
+            "country": loc.get("country", ""),
+            "status": loc.get("status", ""),  # per-site recruiting status
+            "lat": (loc.get("geoPoint") or {}).get("lat"),
+            "lon": (loc.get("geoPoint") or {}).get("lon"),
+        }
+        for loc in contacts_mod.get("locations", [])
+    ]
+
+    central_contacts = contacts_mod.get("centralContacts", [])
+    contact_phone = next((c.get("phone", "") for c in central_contacts if c.get("phone")), "")
+    contact_email = next((c.get("email", "") for c in central_contacts if c.get("email")), "")
 
     return {
         "nct_id": nct_id,
@@ -111,6 +132,9 @@ def _flatten_trial(study: dict) -> dict:
         "start_date": status_mod.get("startDateStruct", {}).get("date", ""),
         "url": f"https://clinicaltrials.gov/study/{nct_id}" if nct_id else "",
         "target_entities": [],
+        "locations": locations,
+        "contact_phone": contact_phone,
+        "contact_email": contact_email,
     }
 
 

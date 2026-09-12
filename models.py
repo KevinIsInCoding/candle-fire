@@ -113,6 +113,11 @@ class TrialSummary:
     sponsor: str = ""
     start_date: str = ""
     url: str = ""
+    # Site locations: {facility, city, state, country, status, lat, lon}. Enables
+    # facility/geography trial search (e.g. "trials at Mass General", "trials in NY").
+    locations: list[dict] = field(default_factory=list)
+    contact_phone: str = ""
+    contact_email: str = ""
 
 
 @dataclass
