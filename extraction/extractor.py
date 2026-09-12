@@ -30,6 +30,7 @@ from config import (
 from extraction.normalizer import CanonicalRegistry, guess_entity_type, normalize_entity
 from logging_config import get_logger
 from models import ALSPaper, ExtractedEntity, EntityRelationship, PaperExtractionResult
+from prompts import EXTRACTION_SYSTEM
 from tools import EXTRACTION_TOOLS
 
 _logger = get_logger("extraction.extractor")
@@ -37,17 +38,6 @@ _logger = get_logger("extraction.extractor")
 # Seconds between batch status polls. Batches usually finish in well under an
 # hour; the ceiling is 24h.
 _POLL_INTERVAL_S = 30
-
-_EXTRACTION_SYSTEM = """\
-You are a biomedical NLP expert specializing in ALS (amyotrophic lateral sclerosis).
-Extract entities and relationships from each paper using the extract_entities tool.
-Call it once per paper. Use the full text when provided — it is richer than the abstract alone.
-
-Entity types: Gene, Protein, Compound, Pathway, Phenotype, Mechanism.
-Relationship types: BINDS, INHIBITS, ASSOCIATED_WITH, TESTED_IN, EXPRESSED_IN, CO_OCCURS.
-
-Be precise. Only extract entities explicitly mentioned. Return pmid exactly as given.
-"""
 
 
 def extract_all(
@@ -224,7 +214,7 @@ def _build_params(batch: list[ALSPaper]) -> MessageCreateParamsNonStreaming:
     return MessageCreateParamsNonStreaming(
         model=EXTRACTION_MODEL,
         max_tokens=8192,
-        system=_EXTRACTION_SYSTEM,
+        system=EXTRACTION_SYSTEM,
         tools=list(EXTRACTION_TOOLS),
         tool_choice={"type": "any"},
         messages=[{"role": "user", "content": _format_batch(batch)}],

@@ -8,6 +8,7 @@ import httpx
 
 from config import CTGOV_BASE, EXTRACTION_MODEL
 from logging_config import get_logger
+from prompts import TRIAL_EXTRACTION_SYSTEM
 
 if TYPE_CHECKING:
     import anthropic
@@ -15,16 +16,6 @@ if TYPE_CHECKING:
 _logger = get_logger("ingestion.clinicaltrials")
 
 _TRIAL_BATCH_SIZE = 10
-
-_TRIAL_EXTRACTION_SYSTEM = """You are a biomedical NLP expert specializing in ALS (amyotrophic lateral sclerosis) clinical trials.
-
-For each trial provided, identify the primary biological target(s) being tested or modulated:
-- Genes silenced or corrected (e.g., SOD1, TARDBP, FUS, C9orf72, NEK1, VCP, TBK1)
-- Proteins targeted (use canonical gene symbol, e.g. TARDBP for TDP-43 protein)
-- Compounds/drugs — report the molecular or pathway target, not the drug name (e.g., a trial of AMX0114 targets TARDBP)
-- Mechanisms (e.g., neuroinflammation, oxidative stress, glutamate excitotoxicity)
-
-Call extract_trial_targets once per trial. Return an empty targets list only when no specific molecular or mechanistic target is identifiable."""
 
 
 def fetch_als_trials(
@@ -204,7 +195,7 @@ def _call_claude_batch(
             response = client.messages.create(
                 model=EXTRACTION_MODEL,
                 max_tokens=4096,
-                system=_TRIAL_EXTRACTION_SYSTEM,
+                system=TRIAL_EXTRACTION_SYSTEM,
                 tools=tools,
                 tool_choice={"type": "any"},
                 messages=[{"role": "user", "content": "\n".join(lines)}],

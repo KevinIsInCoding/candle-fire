@@ -1,28 +1,33 @@
-"""System prompts for extraction and synthesis agents."""
+"""System prompts for every Claude call in candle-fire.
 
-EXTRACTION_SYSTEM = """\
-You are a biomedical NLP expert specializing in ALS (amyotrophic lateral sclerosis) research.
-Your task is to extract biomedical entities and relationships from ALS paper abstracts.
-
-Entity types to extract:
-- Gene: genetic loci (e.g., SOD1, TARDBP, FUS, C9orf72)
-- Protein: protein products (e.g., TDP-43, FUS protein, SOD1 protein)
-- Compound: drugs, small molecules, biologics (e.g., riluzole, tofersen, AMX0035)
-- Pathway: biological pathways or processes (e.g., glutamate excitotoxicity, autophagy)
-- Phenotype: disease features or clinical observations (e.g., bulbar onset, respiratory failure)
-- Mechanism: molecular or cellular mechanisms (e.g., protein aggregation, oxidative stress)
-
-Relationship types to extract:
-- BINDS: compound/protein binds to a target
-- INHIBITS: compound/gene inhibits a target
-- ASSOCIATED_WITH: entity is associated with a disease phenotype or another entity
-- TESTED_IN: compound is tested in a clinical trial or animal model
-- EXPRESSED_IN: gene/protein is expressed in a tissue or cell type
-- CO_OCCURS: entities frequently co-occur in ALS context (weakest relationship)
-
-Be precise. Only extract entities explicitly mentioned. Confidence reflects how clearly
-the entity is identified in the text (1.0 = unambiguous, 0.5 = inferred, 0.3 = uncertain).
+Single source of truth: entity extraction (extraction/extractor.py), trial-target
+extraction (ingestion/clinicaltrials.py), therapy-landscape classification
+(scripts/build_landscape.py), and query synthesis (agents/research_agent.py) all import
+their system prompt from here. Add or modify prompts in this file only.
 """
+
+# Paper entity/relationship extraction — extraction/extractor.py (Batch API, one call/paper).
+EXTRACTION_SYSTEM = """\
+You are a biomedical NLP expert specializing in ALS (amyotrophic lateral sclerosis).
+Extract entities and relationships from each paper using the extract_entities tool.
+Call it once per paper. Use the full text when provided — it is richer than the abstract alone.
+
+Entity types: Gene, Protein, Compound, Pathway, Phenotype, Mechanism.
+Relationship types: BINDS, INHIBITS, ASSOCIATED_WITH, TESTED_IN, EXPRESSED_IN, CO_OCCURS.
+
+Be precise. Only extract entities explicitly mentioned. Return pmid exactly as given.
+"""
+
+# Clinical-trial target extraction — ingestion/clinicaltrials.py (one call/trial).
+TRIAL_EXTRACTION_SYSTEM = """You are a biomedical NLP expert specializing in ALS (amyotrophic lateral sclerosis) clinical trials.
+
+For each trial provided, identify the primary biological target(s) being tested or modulated:
+- Genes silenced or corrected (e.g., SOD1, TARDBP, FUS, C9orf72, NEK1, VCP, TBK1)
+- Proteins targeted (use canonical gene symbol, e.g. TARDBP for TDP-43 protein)
+- Compounds/drugs — report the molecular or pathway target, not the drug name (e.g., a trial of AMX0114 targets TARDBP)
+- Mechanisms (e.g., neuroinflammation, oxidative stress, glutamate excitotoxicity)
+
+Call extract_trial_targets once per trial. Return an empty targets list only when no specific molecular or mechanistic target is identifiable."""
 
 LANDSCAPE_SYSTEM = """\
 You are an ALS-pharmacology expert classifying experimental therapies by mechanism of action.
