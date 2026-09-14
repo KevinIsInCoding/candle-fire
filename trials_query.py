@@ -112,19 +112,29 @@ def search_trials_by_location(
     state: str | None = None,
     country: str | None = None,
     status: str | None = None,
+    study_type: str | None = None,
 ) -> list[dict]:
     """Return trials with at least one site matching the location filters.
 
     `status`: "Recruiting" keeps only trials with an open overall status; "Not recruiting"
-    keeps only closed ones; anything else (None / "All") keeps all. Each returned trial is a
-    shallow copy with `matched_sites` attached; recruiting trials are ranked first.
+    keeps only closed ones; anything else (None / "All") keeps all.
+    `study_type`: "Interventional" keeps interventional trials; "Expanded Access" keeps
+    expanded-access (investigational-use) programs; anything else (None / "All") keeps both.
+    Each returned trial is a shallow copy with `matched_sites` attached; recruiting first.
     """
     if not any([facility, city, state, country]):
         return []
 
     status_filter = (status or "").strip().lower()
+    type_filter = (study_type or "").strip().lower()
     results: list[dict] = []
     for trial in trials:
+        is_eap = bool(trial.get("is_expanded_access"))
+        if type_filter == "interventional" and is_eap:
+            continue
+        if type_filter == "expanded access" and not is_eap:
+            continue
+
         matched_sites = [
             s for s in trial.get("locations", [])
             if _site_matches(s, facility, city, state, country)
@@ -158,22 +168,31 @@ MIN_AUTOCOMPLETE_CHARS = 3  # client-side gate: the attached list stays hidden u
 
 
 def build_location_index(trials: list[dict]) -> dict[str, list[tuple[str, int]]]:
-    """Distinct facility + city names with their trial-site counts, each sorted busiest first.
+    """Distinct facility + city names with their TRIAL counts, each sorted busiest first.
 
-    Built once at startup; feeds location_choices() which becomes the combobox `choices`.
+    Counts distinct trials, not site rows: a single trial that lists an anonymized placeholder
+    like "GSK Investigational Site" 49 times counts once, so placeholders don't balloon to the
+    top of the ranking and the shown count matches what a search can return. Built once at
+    startup; feeds location_choices() which becomes the combobox `choices`.
     """
     from collections import Counter
 
     city_counts: Counter = Counter()
     facility_counts: Counter = Counter()
     for t in trials:
+        cities_here: set[str] = set()
+        facilities_here: set[str] = set()
         for s in t.get("locations", []):
             city = (s.get("city") or "").strip()
             facility = (s.get("facility") or "").strip()
             if city:
-                city_counts[city] += 1
+                cities_here.add(city)
             if facility:
-                facility_counts[facility] += 1
+                facilities_here.add(facility)
+        for c in cities_here:
+            city_counts[c] += 1
+        for f in facilities_here:
+            facility_counts[f] += 1
 
     def _ranked(counter: Counter) -> list[tuple[str, int]]:
         # busiest first, then alphabetical for stable ties
@@ -182,16 +201,17 @@ def build_location_index(trials: list[dict]) -> dict[str, list[tuple[str, int]]]
     return {"cities": _ranked(city_counts), "facilities": _ranked(facility_counts)}
 
 
-def location_choices(index: dict) -> dict[str, list[tuple[str, str]]]:
-    """Gradio combobox (label, value) choices for cities and facilities, busiest first.
+def location_choices(index: dict) -> dict[str, list[str]]:
+    """Gradio combobox choices — plain names, busiest first.
 
-    Label carries the site count ("New York  ·  100 sites"); value is the clean name used for
-    searching. Order is preserved by Gradio's client-side filter, so ranking holds as you type.
+    Just the names (no "· N trials" suffix): with a filterable/custom-value Dropdown the
+    displayed option text becomes the field value, so any suffix would leak into the search
+    term. Ranking is preserved by list order; the count is used only for that ordering.
     """
-    def _fmt(pairs: list[tuple[str, int]]) -> list[tuple[str, str]]:
-        return [(f"{name}  ·  {c} site{'s' if c != 1 else ''}", name) for name, c in pairs]
-
-    return {"cities": _fmt(index.get("cities", [])), "facilities": _fmt(index.get("facilities", []))}
+    return {
+        "cities": [name for name, _ in index.get("cities", [])],
+        "facilities": [name for name, _ in index.get("facilities", [])],
+    }
 
 
 def _find_supporting_papers(
@@ -433,6 +453,7 @@ def enrich_trial(
         "url": trial.get("url", ""),
         "target_entities": trial.get("target_entities", []),
         "mechanism": mechanism,
+        "eligibility": trial.get("eligibility", {}) or {},
         "matched_sites": trial.get("matched_sites", []),
         "key_papers": key_papers,
         "sibling_trials": sibling_trials,
@@ -489,6 +510,36 @@ def _tier_rationale_html(ev: dict) -> str:
     )
 
 
+def _eligibility_html(elig: dict) -> str:
+    """Collapsible enrollment-criteria block: age/sex summary + inclusion/exclusion text.
+
+    Rendered only for active/recruiting trials (the caller gates on status), since that's when
+    a physician assesses whether a patient qualifies.
+    """
+    criteria = (elig.get("criteria") or "").strip()
+    if not criteria:
+        return ""
+    bits = []
+    age = " – ".join(x for x in (elig.get("min_age"), elig.get("max_age")) if x) or None
+    if age:
+        bits.append(f"Age {html.escape(age)}")
+    sex = elig.get("sex")
+    if sex and sex != "ALL":
+        bits.append(html.escape(sex.title()))
+    elif sex == "ALL":
+        bits.append("All sexes")
+    if elig.get("healthy_volunteers"):
+        bits.append("Accepts healthy volunteers")
+    summary = "Eligibility" + (f" · {' · '.join(bits)}" if bits else "")
+    body = html.escape(criteria).replace("\n", "<br>")
+    return (
+        '<details style="margin-top:6px;font-size:0.82rem;color:#555;">'
+        f'<summary style="cursor:pointer;color:#0984E3;">{summary}</summary>'
+        f'<div style="margin:4px 0 0 4px;line-height:1.4;">{body}</div>'
+        '</details>'
+    )
+
+
 def render_trials_html(enriched: list[dict], match_count: int) -> str:
     """Render enriched location-search results as an HTML card list."""
     if not enriched:
@@ -505,6 +556,8 @@ def render_trials_html(enriched: list[dict], match_count: int) -> str:
         mech = t.get("mechanism", "")
         mech_pill = _pill(f'Mechanism: {mech}', "#6C5CE7") if mech else ""
         rationale_html = _tier_rationale_html(ev)
+        # Enrollment criteria only for active/recruiting trials — the enrollable ones.
+        elig_html = _eligibility_html(t.get("eligibility", {})) if t.get("is_recruiting") else ""
         phase = html.escape((t.get("phase") or "—").replace("PHASE", "Ph"))
         title = html.escape(t.get("title", "")[:140])
         nct = html.escape(t.get("nct_id", ""))
@@ -553,7 +606,7 @@ def render_trials_html(enriched: list[dict], match_count: int) -> str:
             f'<div style="font-weight:600;">{nct_link} — {title}</div>'
             f'{rationale_html}'
             f'<div style="margin-top:4px;font-size:0.82rem;color:#555;"><b>Site(s):</b><br>{sites_html}</div>'
-            f'{papers_html}{siblings_html}'
+            f'{elig_html}{papers_html}{siblings_html}'
             '</div>'
         )
 

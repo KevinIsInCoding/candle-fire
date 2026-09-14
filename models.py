@@ -118,6 +118,9 @@ class TrialSummary:
     locations: list[dict] = field(default_factory=list)
     contact_phone: str = ""
     contact_email: str = ""
+    # Enrollment/eligibility from CT.gov: {criteria, sex, min_age, max_age,
+    # healthy_volunteers, std_ages}. Shown for active/recruiting trials.
+    eligibility: dict = field(default_factory=dict)
 
 
 @dataclass
