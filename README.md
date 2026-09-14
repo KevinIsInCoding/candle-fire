@@ -13,11 +13,11 @@ pinned: false
 
 **ALS Research Intelligence for Physicians**
 
-Candle-fire is a physician-facing tool that synthesizes evidence from ~500 curated ALS research papers and a biomedical knowledge graph. Ask a free-text question about ALS biology, drug targets, or clinical trials — get a structured, cited answer in under 30 seconds.
+Candle-fire is a physician-facing tool that synthesizes evidence from ~10,000 curated ALS research papers and a biomedical knowledge graph. Ask a free-text question about ALS biology, drug targets, or clinical trials — get a structured, cited answer in under 30 seconds.
 
 ## What It Does
 
-- **Two-layer retrieval**: Knowledge graph expansion (BioLORD-2023-C embeddings + NetworkX) → RAG over ~500 ALS papers
+- **Two-layer retrieval**: Knowledge graph expansion (BioLORD-2023-C embeddings + NetworkX) → RAG over ~10,000 ALS papers
 - **Citation-weighted ranking**: Highly-cited papers surface first
 - **Structured synthesis**: Claude Sonnet produces mechanism summaries, entity tables, evidence strength assessments, and trial links
 - **Biomedical synonyms**: BioLORD understands that "TDP-43" = "TARDBP" = "TAR DNA-binding protein 43"
@@ -47,7 +47,7 @@ cp .env.example .env
 Build the knowledge assets before launching the app. Each step is resumable.
 
 ```bash
-# 1. Ingest ~500 ALS papers from PubMed + PMC full text + citation counts (~15 min)
+# 1. Ingest ~10,000 ALS papers from PubMed + PMC full text + citation counts (~15 min)
 uv run python scripts/ingest_papers.py
 
 # 2. Ingest ALS clinical trials from ClinicalTrials.gov (< 1 min, run in parallel)
@@ -131,10 +131,10 @@ Physician query
 
 | Source | Content | Volume |
 |---|---|---|
-| PubMed Entrez | ALS paper abstracts + metadata | ~500 papers (2018–2024) |
+| PubMed Entrez | ALS paper abstracts + metadata | ~10,000 papers |
 | PubMed Central | Full text for Open Access papers | ~50% coverage |
 | Semantic Scholar | Citation counts per paper | All papers |
-| ClinicalTrials.gov v2 | Active ALS recruiting trials | ~112 trials |
+| ClinicalTrials.gov v2 | Interventional + expanded-access ALS trials | ~720 trials |
 
 ## Disclaimer
 

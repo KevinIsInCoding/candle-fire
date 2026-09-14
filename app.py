@@ -1,6 +1,7 @@
 """Gradio web UI for candle-fire — physician-facing ALS research intelligence."""
 from __future__ import annotations
 
+import html
 import json
 from pathlib import Path
 
@@ -103,7 +104,13 @@ _trials = _load_trials()
 _client = anthropic.Anthropic()
 
 _n_chunks = _collection.count() if _collection else 0
-_n_trials = len(_trials)
+# Headline trial count = recruiting, interventional trials only (the actionable set), not the
+# full corpus (which includes completed/terminated studies and expanded-access programs).
+_RECRUITING = {"RECRUITING", "NOT_YET_RECRUITING", "ENROLLING_BY_INVITATION", "AVAILABLE"}
+_n_trials = sum(
+    1 for t in _trials
+    if t.get("study_type") == "INTERVENTIONAL" and t.get("status") in _RECRUITING
+)
 _kg_nodes = _graph.number_of_nodes() if _graph else 0
 
 # Experimental therapy landscape (offline-built artifact; loaded once)
@@ -171,12 +178,15 @@ footer { display: none !important; }
 /* Autocomplete gate: hide a combobox's attached option list until ≥3 chars (see
    _AUTOCOMPLETE_GATE_JS). The script toggles .ac-hide on the input's wrapper by length. */
 #facility_combo.ac-hide ul, #city_combo.ac-hide ul { display: none !important; }
+/* Smaller filter labels so long ones (e.g. "Recruitment status") stay on one line and the
+   dropdown chevron doesn't overlap the text. */
+.trial-filters label span { font-size: 0.78rem !important; white-space: nowrap; }
 """
 
 _TITLE_MD = """# 🕯️ Candle-Fire
 ### ALS Research Intelligence for Physicians
 Ask a free-text question about ALS biology, drug targets, or clinical trials.
-Answers are synthesized from ~500 curated ALS papers and enriched by a biomedical knowledge graph.
+Answers are synthesized from a curated ALS research corpus and enriched by a biomedical knowledge graph.
 """
 
 _DISCLAIMER_MD = """<div class="disclaimer">
@@ -223,23 +233,24 @@ _LOC_CHOICES = trials_query.location_choices(_LOC_INDEX)
 _AUTOCOMPLETE_GATE_JS = f"""
 () => {{
   const MIN = {trials_query.MIN_AUTOCOMPLETE_CHARS};
-  const gate = (id) => {{
+  const gate = (id, hint) => {{
     const root = document.getElementById(id);
     if (!root) return;
     const input = root.querySelector('input');
     if (!input) return;
+    if (hint) input.setAttribute('placeholder', hint);  // in-box hint; hides once they type
     const apply = () => root.classList.toggle('ac-hide', input.value.trim().length < MIN);
     input.addEventListener('input', apply);
     input.addEventListener('focus', apply);
     apply();
   }};
-  gate('facility_combo');
-  gate('city_combo');
+  gate('facility_combo', 'Type ≥3 letters, e.g. Mass General');
+  gate('city_combo', 'Type ≥3 letters, busiest cities first');
 }}
 """
 
 
-def _search_trials(facility: str, state: str, city: str, status: str) -> str:
+def _search_trials(facility: str, state: str, city: str, study_type: str, status: str) -> str:
     facility = (facility or "").strip() or None
     city = (city or "").strip() or None
     state = None if (not state or state == "All") else state
@@ -248,8 +259,28 @@ def _search_trials(facility: str, state: str, city: str, status: str) -> str:
         return '<div style="color:#888;padding:12px 0;">Enter a facility, state, or city to search.</div>'
 
     matches = trials_query.search_trials_by_location(
-        _trials, facility=facility, city=city, state=state, status=status
+        _trials, facility=facility, city=city, state=state,
+        status=status, study_type=study_type,
     )
+
+    # If the active filters hide everything, say whether broader filters would find trials —
+    # e.g. a facility with only completed studies under the default Recruiting + Interventional.
+    if not matches and (status != "All" or study_type != "All"):
+        broad = trials_query.search_trials_by_location(
+            _trials, facility=facility, city=city, state=state, status="All", study_type="All",
+        )
+        if broad:
+            where = ", ".join(p for p in (facility, city, state) if p)
+            return (
+                '<div style="background:#fff6e5;border:1px solid #ffe0a3;border-radius:8px;'
+                'padding:10px 12px;margin:6px 0;color:#7a5b00;font-size:0.9rem;">'
+                f'No <b>{html.escape((study_type or "").lower())}</b> trials that are '
+                f'<b>{html.escape((status or "").lower())}</b> at {html.escape(where)}. '
+                f'{len(broad)} trial(s) exist there under broader filters — set '
+                '<b>Study type</b> and <b>Recruitment status</b> to <b>All</b> to see them.'
+                '</div>'
+            )
+
     enriched = [
         trials_query.enrich_trial(t, _collection, _graph, _trials)
         for t in matches[:_TRIAL_ENRICH_CAP]
@@ -269,7 +300,7 @@ with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
                 gr.HTML(
                     f'<div class="status-bar">'
                     f'{_n_chunks} paper chunks &nbsp;·&nbsp; '
-                    f'{_n_trials} clinical trials &nbsp;·&nbsp; '
+                    f'{_n_trials} recruiting interventional trials &nbsp;·&nbsp; '
                     f'{_kg_nodes} knowledge graph nodes'
                     f'</div>'
                 )
@@ -380,12 +411,11 @@ with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
                     "**location** (state / city). Each result is enriched with recruiting status, an "
                     "evidence-strength tier, key supporting papers, and related trials for the same compound."
                 )
-                with gr.Row():
+                with gr.Row(elem_classes="trial-filters"):
                     facility_tb = gr.Dropdown(
                         choices=_LOC_CHOICES["facilities"], value=None,
                         label="Facility / institution", scale=2,
                         filterable=True, allow_custom_value=True, elem_id="facility_combo",
-                        info="Type ≥3 letters and pick a match (e.g. Mass General).",
                     )
                     state_dd = gr.Dropdown(
                         choices=_US_STATES, value="All", label="State", scale=1,
@@ -394,11 +424,17 @@ with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
                         choices=_LOC_CHOICES["cities"], value=None,
                         label="City", scale=1,
                         filterable=True, allow_custom_value=True, elem_id="city_combo",
-                        info="Type ≥3 letters; busiest trial cities first.",
+                    )
+                # Filters on their own row so the labels/values have full width — no wrapping,
+                # no value running under the chevron.
+                with gr.Row(elem_classes="trial-filters"):
+                    study_type_dd = gr.Dropdown(
+                        choices=["Interventional", "Expanded Access", "All"],
+                        value="Interventional", label="Study type", scale=1,
                     )
                     trial_status_dd = gr.Dropdown(
                         choices=["All", "Recruiting", "Not recruiting"],
-                        value="All", label="Recruitment status", scale=1,
+                        value="Recruiting", label="Recruitment status", scale=1,
                     )
                 search_btn = gr.Button("Search trials", variant="primary")
                 trial_results = gr.HTML(
@@ -408,7 +444,7 @@ with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
                 # Facility/city are typeable comboboxes (filterable Dropdowns) — the physician
                 # types and picks from the attached, busiest-first list. No per-keystroke server
                 # event needed; the search reads the selected/typed value directly.
-                _trial_search_inputs = [facility_tb, state_dd, city_tb, trial_status_dd]
+                _trial_search_inputs = [facility_tb, state_dd, city_tb, study_type_dd, trial_status_dd]
                 search_btn.click(_search_trials, inputs=_trial_search_inputs, outputs=[trial_results])
                 # Picking a facility/city from its list also runs the search immediately.
                 facility_tb.select(_search_trials, inputs=_trial_search_inputs, outputs=[trial_results])
