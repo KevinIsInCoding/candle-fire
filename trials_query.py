@@ -146,6 +146,54 @@ def search_trials_by_location(
     return results
 
 
+# ── Autocomplete vocabulary for the facility / city combobox inputs ───────────
+# The facility/city fields are typeable comboboxes (gr.Dropdown, filterable): the physician
+# types and PICKS from the attached list, rather than the system guessing from a substring
+# (where "new" is ambiguously New York / New Haven / Newport Beach…). Choices are the names
+# actually present in the trials, ranked by trial-site count (busiest first) so the highest-
+# yield option surfaces first — for cities this is the practical stand-in for "population" and
+# also covers international cities. Gradio filters the preloaded list client-side as you type.
+
+MIN_AUTOCOMPLETE_CHARS = 3  # client-side gate: the attached list stays hidden until this many chars
+
+
+def build_location_index(trials: list[dict]) -> dict[str, list[tuple[str, int]]]:
+    """Distinct facility + city names with their trial-site counts, each sorted busiest first.
+
+    Built once at startup; feeds location_choices() which becomes the combobox `choices`.
+    """
+    from collections import Counter
+
+    city_counts: Counter = Counter()
+    facility_counts: Counter = Counter()
+    for t in trials:
+        for s in t.get("locations", []):
+            city = (s.get("city") or "").strip()
+            facility = (s.get("facility") or "").strip()
+            if city:
+                city_counts[city] += 1
+            if facility:
+                facility_counts[facility] += 1
+
+    def _ranked(counter: Counter) -> list[tuple[str, int]]:
+        # busiest first, then alphabetical for stable ties
+        return sorted(counter.items(), key=lambda kv: (-kv[1], kv[0].lower()))
+
+    return {"cities": _ranked(city_counts), "facilities": _ranked(facility_counts)}
+
+
+def location_choices(index: dict) -> dict[str, list[tuple[str, str]]]:
+    """Gradio combobox (label, value) choices for cities and facilities, busiest first.
+
+    Label carries the site count ("New York  ·  100 sites"); value is the clean name used for
+    searching. Order is preserved by Gradio's client-side filter, so ranking holds as you type.
+    """
+    def _fmt(pairs: list[tuple[str, int]]) -> list[tuple[str, str]]:
+        return [(f"{name}  ·  {c} site{'s' if c != 1 else ''}", name) for name, c in pairs]
+
+    return {"cities": _fmt(index.get("cities", [])), "facilities": _fmt(index.get("facilities", []))}
+
+
 def _find_supporting_papers(
     trial: dict,
     collection: "chromadb.Collection | None",
