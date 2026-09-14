@@ -453,6 +453,7 @@ def enrich_trial(
         "url": trial.get("url", ""),
         "target_entities": trial.get("target_entities", []),
         "mechanism": mechanism,
+        "eligibility": trial.get("eligibility", {}) or {},
         "matched_sites": trial.get("matched_sites", []),
         "key_papers": key_papers,
         "sibling_trials": sibling_trials,
@@ -509,6 +510,36 @@ def _tier_rationale_html(ev: dict) -> str:
     )
 
 
+def _eligibility_html(elig: dict) -> str:
+    """Collapsible enrollment-criteria block: age/sex summary + inclusion/exclusion text.
+
+    Rendered only for active/recruiting trials (the caller gates on status), since that's when
+    a physician assesses whether a patient qualifies.
+    """
+    criteria = (elig.get("criteria") or "").strip()
+    if not criteria:
+        return ""
+    bits = []
+    age = " – ".join(x for x in (elig.get("min_age"), elig.get("max_age")) if x) or None
+    if age:
+        bits.append(f"Age {html.escape(age)}")
+    sex = elig.get("sex")
+    if sex and sex != "ALL":
+        bits.append(html.escape(sex.title()))
+    elif sex == "ALL":
+        bits.append("All sexes")
+    if elig.get("healthy_volunteers"):
+        bits.append("Accepts healthy volunteers")
+    summary = "Eligibility" + (f" · {' · '.join(bits)}" if bits else "")
+    body = html.escape(criteria).replace("\n", "<br>")
+    return (
+        '<details style="margin-top:6px;font-size:0.82rem;color:#555;">'
+        f'<summary style="cursor:pointer;color:#0984E3;">{summary}</summary>'
+        f'<div style="margin:4px 0 0 4px;line-height:1.4;">{body}</div>'
+        '</details>'
+    )
+
+
 def render_trials_html(enriched: list[dict], match_count: int) -> str:
     """Render enriched location-search results as an HTML card list."""
     if not enriched:
@@ -525,6 +556,8 @@ def render_trials_html(enriched: list[dict], match_count: int) -> str:
         mech = t.get("mechanism", "")
         mech_pill = _pill(f'Mechanism: {mech}', "#6C5CE7") if mech else ""
         rationale_html = _tier_rationale_html(ev)
+        # Enrollment criteria only for active/recruiting trials — the enrollable ones.
+        elig_html = _eligibility_html(t.get("eligibility", {})) if t.get("is_recruiting") else ""
         phase = html.escape((t.get("phase") or "—").replace("PHASE", "Ph"))
         title = html.escape(t.get("title", "")[:140])
         nct = html.escape(t.get("nct_id", ""))
@@ -573,7 +606,7 @@ def render_trials_html(enriched: list[dict], match_count: int) -> str:
             f'<div style="font-weight:600;">{nct_link} — {title}</div>'
             f'{rationale_html}'
             f'<div style="margin-top:4px;font-size:0.82rem;color:#555;"><b>Site(s):</b><br>{sites_html}</div>'
-            f'{papers_html}{siblings_html}'
+            f'{elig_html}{papers_html}{siblings_html}'
             '</div>'
         )
 

@@ -70,6 +70,22 @@ def fetch_als_trials(
     return trials
 
 
+def _extract_eligibility(elig_mod: dict) -> dict:
+    """Enrollment/eligibility fields from a CT.gov v2 eligibilityModule.
+
+    Shared by _flatten_trial (ingestion) and scripts/backfill_eligibility.py so the stored
+    shape is identical whichever path populated it.
+    """
+    return {
+        "criteria": elig_mod.get("eligibilityCriteria", ""),  # free text: Inclusion/Exclusion
+        "sex": elig_mod.get("sex", ""),                        # ALL / MALE / FEMALE
+        "min_age": elig_mod.get("minimumAge", ""),             # e.g. "18 Years"
+        "max_age": elig_mod.get("maximumAge", ""),
+        "healthy_volunteers": elig_mod.get("healthyVolunteers"),
+        "std_ages": elig_mod.get("stdAges", []),               # e.g. ["ADULT", "OLDER_ADULT"]
+    }
+
+
 def _flatten_trial(study: dict) -> dict:
     proto = study.get("protocolSection", {})
     id_mod = proto.get("identificationModule", {})
@@ -79,6 +95,7 @@ def _flatten_trial(study: dict) -> dict:
     arms_mod = proto.get("armsInterventionsModule", {})
     status_mod = proto.get("statusModule", {})
     contacts_mod = proto.get("contactsLocationsModule", {})
+    elig_mod = proto.get("eligibilityModule", {})
 
     nct_id = id_mod.get("nctId", "")
     interventions = [
@@ -126,6 +143,7 @@ def _flatten_trial(study: dict) -> dict:
         "locations": locations,
         "contact_phone": contact_phone,
         "contact_email": contact_email,
+        "eligibility": _extract_eligibility(elig_mod),
     }
 
 
