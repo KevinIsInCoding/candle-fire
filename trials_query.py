@@ -453,6 +453,7 @@ def enrich_trial(
         "url": trial.get("url", ""),
         "target_entities": trial.get("target_entities", []),
         "mechanism": mechanism,
+        "mechanism_summary": trial.get("mechanism_summary", {}) or {},
         "eligibility": trial.get("eligibility", {}) or {},
         "matched_sites": trial.get("matched_sites", []),
         "key_papers": key_papers,
@@ -510,6 +511,50 @@ def _tier_rationale_html(ev: dict) -> str:
     )
 
 
+def _pmid_cite(pmid: str) -> str:
+    """Small ' [PMID 123]' PubMed link, or '' when there's no citation."""
+    pmid = (pmid or "").strip()
+    if not pmid:
+        return ""
+    return (f' <a href="https://pubmed.ncbi.nlm.nih.gov/{html.escape(pmid)}/" target="_blank" '
+            f'rel="noopener" style="color:#0984E3;font-size:0.75rem;">[PMID {html.escape(pmid)}]</a>')
+
+
+def _mechanism_summary_html(summary: dict) -> str:
+    """Collapsible 'Mechanism summary' block: compound, target, animal results, repurposed-from.
+
+    RAG-grounded (offline step 5.5). Each field shows its supporting PMID when the claim came
+    from the corpus; missing/unsupported fields read "Unknown", per the grounding guardrail.
+    """
+    if not summary:
+        return ""
+
+    def _val(text: str) -> str:
+        text = (text or "unknown").strip()
+        style = "color:#aaa;" if text.lower() in ("unknown", "not repurposed") else ""
+        return f'<span style="{style}">{html.escape(text)}</span>'
+
+    rows = [
+        ("Compound", _val(summary.get("compound", "unknown")), ""),
+        ("Targeting mechanism", _val(summary.get("targeting_mechanism", "unknown")),
+         summary.get("targeting_mechanism_pmid", "")),
+        ("Animal / preclinical results", _val(summary.get("animal_results", "unknown")),
+         summary.get("animal_results_pmid", "")),
+        ("Repurposed from", _val(summary.get("repurposed_from", "unknown")),
+         summary.get("repurposed_from_pmid", "")),
+    ]
+    items = "".join(
+        f'<li style="margin:2px 0;"><b>{label}:</b> {value}{_pmid_cite(pmid)}</li>'
+        for label, value, pmid in rows
+    )
+    return (
+        '<details style="margin-top:6px;font-size:0.82rem;color:#555;">'
+        '<summary style="cursor:pointer;color:#6C5CE7;">Mechanism summary</summary>'
+        f'<ul style="margin:4px 0 0 18px;list-style:none;padding:0;line-height:1.45;">{items}</ul>'
+        '</details>'
+    )
+
+
 def _eligibility_html(elig: dict) -> str:
     """Collapsible enrollment-criteria block: age/sex summary + inclusion/exclusion text.
 
@@ -556,6 +601,7 @@ def render_trials_html(enriched: list[dict], match_count: int) -> str:
         mech = t.get("mechanism", "")
         mech_pill = _pill(f'Mechanism: {mech}', "#6C5CE7") if mech else ""
         rationale_html = _tier_rationale_html(ev)
+        mech_summary_html = _mechanism_summary_html(t.get("mechanism_summary", {}))
         # Enrollment criteria only for active/recruiting trials — the enrollable ones.
         elig_html = _eligibility_html(t.get("eligibility", {})) if t.get("is_recruiting") else ""
         phase = html.escape((t.get("phase") or "—").replace("PHASE", "Ph"))
@@ -604,7 +650,7 @@ def render_trials_html(enriched: list[dict], match_count: int) -> str:
             f'{_pill(s_label, s_color)}{tier_pill}{mech_pill}'
             f'<span style="color:#888;font-size:0.78rem;">{phase}</span></div>'
             f'<div style="font-weight:600;">{nct_link} — {title}</div>'
-            f'{rationale_html}'
+            f'{rationale_html}{mech_summary_html}'
             f'<div style="margin-top:4px;font-size:0.82rem;color:#555;"><b>Site(s):</b><br>{sites_html}</div>'
             f'{elig_html}{papers_html}{siblings_html}'
             '</div>'

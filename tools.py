@@ -55,6 +55,17 @@ EXTRACT_TRIAL_TARGETS_TOOL: anthropic.types.ToolParam = {
     "input_schema": _load("extract_trial_targets"),
 }
 
+SUMMARIZE_TRIAL_MECHANISM_TOOL: anthropic.types.ToolParam = {
+    "name": "summarize_trial_mechanism",
+    "description": (
+        "Produce a RAG-grounded mechanism summary for one ALS clinical trial — its compound, "
+        "targeting mechanism, animal/preclinical results, and original indication if repurposed. "
+        "Animal results and repurposed-from claims must cite a provided evidence PMID or be "
+        "reported as 'unknown'. Call once per trial."
+    ),
+    "input_schema": _load("summarize_trial_mechanism"),
+}
+
 CLASSIFY_THERAPY_TOOL: anthropic.types.ToolParam = {
     "name": "classify_therapy",
     "description": (
@@ -67,5 +78,6 @@ CLASSIFY_THERAPY_TOOL: anthropic.types.ToolParam = {
 
 EXTRACTION_TOOLS: list[anthropic.types.ToolParam] = [EXTRACT_ENTITIES_TOOL]
 TRIAL_EXTRACTION_TOOLS: list[anthropic.types.ToolParam] = [EXTRACT_TRIAL_TARGETS_TOOL]
+TRIAL_SUMMARY_TOOLS: list[anthropic.types.ToolParam] = [SUMMARIZE_TRIAL_MECHANISM_TOOL]
 RESEARCH_TOOLS: list[anthropic.types.ToolParam] = [SEARCH_LANDSCAPE_TOOL, FIND_TRIALS_BY_LOCATION_TOOL]
 LANDSCAPE_TOOLS: list[anthropic.types.ToolParam] = [CLASSIFY_THERAPY_TOOL]

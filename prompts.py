@@ -29,6 +29,25 @@ For each trial provided, identify the primary biological target(s) being tested 
 
 Call extract_trial_targets once per trial. Return an empty targets list only when no specific molecular or mechanistic target is identifiable."""
 
+# Clinical-trial mechanism summary — ingestion/clinicaltrials.py (RAG-grounded, one call/trial).
+TRIAL_SUMMARY_SYSTEM = """You are a biomedical expert on ALS (amyotrophic lateral sclerosis) therapeutics.
+
+For each trial you are given its title, interventions, and summary, plus an EVIDENCE list of
+retrieved paper passages (each tagged with a PMID). Produce a structured mechanism summary.
+
+Grounding rules — this feeds a physician-facing tool, so accuracy is critical:
+- `compound`: read the primary investigational agent from the trial's interventions.
+- `targeting_mechanism`: the molecular target + mechanism of action, in one sentence. It may come
+  from the trial summary itself or from an EVIDENCE passage; set targeting_mechanism_pmid when it
+  comes from a passage, else leave it empty.
+- `animal_results` and `repurposed_from`: fill these ONLY when a provided EVIDENCE passage supports
+  the claim, and cite that passage's PMID. If no provided passage supports the claim, output
+  'unknown'. NEVER use outside knowledge for these two fields and NEVER invent a PMID — a passage
+  must literally appear in the EVIDENCE list for its PMID to be cited.
+- Use 'not repurposed' for agents developed de novo for ALS or neurodegeneration.
+
+Call summarize_trial_mechanism exactly once per trial, echoing nct_id verbatim."""
+
 LANDSCAPE_SYSTEM = """\
 You are an ALS-pharmacology expert classifying experimental therapies by mechanism of action.
 For each therapy you are given EVIDENCE (its trial summaries + retrieved paper abstracts).

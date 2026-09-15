@@ -61,6 +61,9 @@ uv run python scripts/build_graph.py
 # 5. Build ChromaDB vector index
 uv run python scripts/build_index.py
 
+# 5.5 Add RAG-grounded mechanism summaries to trials (needs the index from step 5; resumable)
+uv run python scripts/ingest_trials.py --summaries
+
 # 6. Build the experimental therapy landscape (offline LLM classification via Batch API)
 uv run python scripts/build_landscape.py
 
@@ -73,6 +76,7 @@ uv run gradio app.py
 - **Node key = `canonical_id`**, never raw entity name. Two papers mentioning "TDP-43" and "TARDBP" must produce one node.
 - **ChromaDB metadata values must be scalars** (str/int/float). Lists → comma-separated strings, deserialized on retrieval.
 - **KG expansion precedes RAG retrieval** in the agent loop. Never query ChromaDB with the raw user question alone.
+- **Trial `mechanism_summary` is RAG-grounded, cite-or-unknown**. `animal_results` and `repurposed_from` are filled only when a retrieved corpus passage supports them (with its PMID); an uncited or unsupported claim is stored as `"unknown"` — never model recall. Built in step 5.5 (needs the index), so it lives in `ingestion/clinicaltrials.py` but runs after `build_index`.
 - **All heavy compute is offline**. No PubMed/extraction calls at query time.
 
 ## Data File Locations
