@@ -29,3 +29,6 @@ logs/
 # IDE
 .vscode/
 .idea/
+
+# UI verification artifacts (screenshots, smoke logs)
+docs/ui-mocks/
