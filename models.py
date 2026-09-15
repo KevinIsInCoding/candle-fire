@@ -121,6 +121,10 @@ class TrialSummary:
     # Enrollment/eligibility from CT.gov: {criteria, sex, min_age, max_age,
     # healthy_volunteers, std_ages}. Shown for active/recruiting trials.
     eligibility: dict = field(default_factory=dict)
+    # RAG-grounded mechanism summary (offline step 5.5): {compound, targeting_mechanism,
+    # targeting_mechanism_pmid, animal_results, animal_results_pmid, repurposed_from,
+    # repurposed_from_pmid}. Missing/unsupported fields are "unknown". Empty until built.
+    mechanism_summary: dict = field(default_factory=dict)
 
 
 @dataclass

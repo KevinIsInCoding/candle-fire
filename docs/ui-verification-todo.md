@@ -1,9 +1,10 @@
 # TODO — UI design→mock→implement→verify loop
 
-> **Status (in progress):** Phases 0–3 + 6 built and green — `.claude/skills/run-ui/` launches
-> the app in UI-smoke mode, drives the Clinical Trials tab in headless Chromium, and asserts the
-> key behaviors (all PASS). Building it caught a real bug: the combobox placeholder + 3-char gate
-> **never ran** (Gradio ignored `js=`/`demo.load(js=)`) — fixed by injecting the script via
+> **Status (in progress):** Phases 0–3 + 6 built and green. The launch/drive/assert engine was
+> extracted into an **independent, generic package `gradio-ui-verify`** (its own repo); this repo
+> is now a *consumer* — `.claude/skills/run-ui/candle_fire_spec.py` is the project spec, run via
+> `python -m gradio_ui_verify …`. All checks PASS. Building it caught a real bug: the combobox
+> placeholder + 3-char gate **never ran** (Gradio ignored `js=`/`demo.load(js=)`) — fixed via
 > `gr.Blocks(head=...)`. Still to do: Phase 1 (<5s smoke boot — currently ~25s), Phases 4–5
 > (design-mock front half + visual-QA agent).
 

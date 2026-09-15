@@ -1,0 +1,47 @@
+{
+  "type": "object",
+  "properties": {
+    "nct_id": {
+      "type": "string",
+      "description": "The ClinicalTrials.gov identifier for this trial (echo it back verbatim)."
+    },
+    "compound": {
+      "type": "string",
+      "description": "The primary drug/agent under test, taken from the trial's interventions. 'unknown' if no investigational agent is identifiable (e.g. a device or behavioral trial)."
+    },
+    "targeting_mechanism": {
+      "type": "string",
+      "description": "One sentence: the molecular target and mechanism of action. May be drawn from the trial summary itself OR a provided paper passage. 'unknown' if neither states it."
+    },
+    "targeting_mechanism_pmid": {
+      "type": "string",
+      "description": "PMID of the supporting passage from the EVIDENCE list, if the mechanism came from a paper. Empty string if it came from the trial summary itself or is unknown."
+    },
+    "animal_results": {
+      "type": "string",
+      "description": "Preclinical / animal-model efficacy findings for this compound. MUST be supported by a passage in the provided EVIDENCE list. 'unknown' if no provided passage reports animal/preclinical results — do NOT use outside knowledge."
+    },
+    "animal_results_pmid": {
+      "type": "string",
+      "description": "PMID from the EVIDENCE list supporting animal_results. Empty string only when animal_results is 'unknown'."
+    },
+    "repurposed_from": {
+      "type": "string",
+      "description": "If this is a repurposed drug, its original approved indication (e.g. 'type 2 diabetes'), supported by a provided EVIDENCE passage. 'not repurposed' for agents developed de novo for ALS/neurodegeneration. 'unknown' if no provided passage establishes an original indication — do NOT use outside knowledge."
+    },
+    "repurposed_from_pmid": {
+      "type": "string",
+      "description": "PMID from the EVIDENCE list supporting repurposed_from. Empty string when repurposed_from is 'not repurposed' or 'unknown'."
+    }
+  },
+  "required": [
+    "nct_id",
+    "compound",
+    "targeting_mechanism",
+    "targeting_mechanism_pmid",
+    "animal_results",
+    "animal_results_pmid",
+    "repurposed_from",
+    "repurposed_from_pmid"
+  ]
+}
