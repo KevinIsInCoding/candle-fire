@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Generator
 
@@ -30,8 +31,9 @@ import trials_query
 
 _logger = get_logger("agents.research_agent")
 
-# Loaded once at startup — ~80MB model, ~80ms/pair on CPU
-_cross_encoder = CrossEncoder(CROSS_ENCODER_MODEL)
+# Loaded once at startup — ~80MB model, ~80ms/pair on CPU. Skipped in UI smoke mode
+# (CANDLE_UI_SMOKE=1), which renders the interface without query features.
+_cross_encoder = None if os.getenv("CANDLE_UI_SMOKE") else CrossEncoder(CROSS_ENCODER_MODEL)
 
 # Drug vocabulary is derived from the (startup-loaded) trials + graph; cache by identity
 # so it is built once per session rather than on every query.

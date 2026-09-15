@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 from pathlib import Path
 
 import anthropic
@@ -96,12 +97,19 @@ def _ensure_data() -> None:
         _logger.warning(f"Failed to download data from HF dataset: {e}")
 
 
-_ensure_data()
+# UI smoke mode (CANDLE_UI_SMOKE=1): render the Blocks WITHOUT the heavy startup loads
+# (cross-encoder, ChromaDB, graph, Anthropic client) so UI/layout tests boot in seconds.
+# The Clinical Trials tab only needs the trials list, which loads fast. Query features are
+# inert in this mode — it exists purely to render and drive the interface.
+_SMOKE = bool(os.getenv("CANDLE_UI_SMOKE"))
 
-_collection = _load_collection()
-_graph = _load_graph()
+if not _SMOKE:
+    _ensure_data()
+
+_collection = None if _SMOKE else _load_collection()
+_graph = None if _SMOKE else _load_graph()
 _trials = _load_trials()
-_client = anthropic.Anthropic()
+_client = None if _SMOKE else anthropic.Anthropic()
 
 _n_chunks = _collection.count() if _collection else 0
 # Headline trial count = recruiting, interventional trials only (the actionable set), not the
@@ -226,27 +234,45 @@ _US_STATES = ["All"] + sorted(set(trials_query._STATE_ABBREV.values()))
 _LOC_INDEX = trials_query.build_location_index(_trials)
 _LOC_CHOICES = trials_query.location_choices(_LOC_INDEX)
 
-# Hide the combobox's attached option list until MIN_AUTOCOMPLETE_CHARS are typed. Gradio has
-# no native min-length gate, so a tiny load-time script toggles a class on the input's wrapper
-# by value length; CSS (_CSS) hides the option <ul> while that class is present. Degrades
-# gracefully — if Gradio's dropdown DOM differs, the combobox still filters from the 1st char.
-_AUTOCOMPLETE_GATE_JS = f"""
-() => {{
+# Combobox behavior that Gradio can't express natively, wired in JS:
+#   - an in-box placeholder hint (gr.Dropdown has no `placeholder` param), and
+#   - hiding the attached option list until MIN_AUTOCOMPLETE_CHARS (a `.ac-hide` class the
+#     CSS in _CSS acts on).
+# Injected via gr.Blocks(head=...) as a real <script> — Gradio's js=/demo.load(js=) callbacks
+# did not execute in this version, but a <head> script runs directly in the browser. The
+# Clinical Trials tab renders LAZILY (inputs appear only when the tab is first opened), so a
+# MutationObserver re-runs the wiring as the DOM changes and marks each input done, attaching
+# whenever the tab renders. Degrades gracefully — if the dropdown DOM differs, the combobox
+# still filters from the first character.
+_AUTOCOMPLETE_GATE_HEAD = f"""
+<script>
+(function() {{
   const MIN = {trials_query.MIN_AUTOCOMPLETE_CHARS};
+  const targets = {{
+    'facility_combo': 'Type \\u22653 letters, e.g. Mass General',
+    'city_combo': 'Type \\u22653 letters, busiest cities first',
+  }};
   const gate = (id, hint) => {{
     const root = document.getElementById(id);
     if (!root) return;
     const input = root.querySelector('input');
-    if (!input) return;
-    if (hint) input.setAttribute('placeholder', hint);  // in-box hint; hides once they type
+    if (!input || input.dataset.acReady) return;   // not rendered yet, or already wired
+    input.dataset.acReady = '1';
+    if (hint) input.setAttribute('placeholder', hint);
     const apply = () => root.classList.toggle('ac-hide', input.value.trim().length < MIN);
     input.addEventListener('input', apply);
     input.addEventListener('focus', apply);
     apply();
   }};
-  gate('facility_combo', 'Type ≥3 letters, e.g. Mass General');
-  gate('city_combo', 'Type ≥3 letters, busiest cities first');
-}}
+  const applyAll = () => Object.entries(targets).forEach(([id, h]) => gate(id, h));
+  const start = () => {{
+    applyAll();
+    new MutationObserver(applyAll).observe(document.body, {{childList: true, subtree: true}});
+  }};
+  if (document.body) start();
+  else document.addEventListener('DOMContentLoaded', start);
+}})();
+</script>
 """
 
 
@@ -288,7 +314,7 @@ def _search_trials(facility: str, state: str, city: str, study_type: str, status
     return trials_query.render_trials_html(enriched, len(matches))
 
 
-with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
+with gr.Blocks(title="Candle-Fire — ALS Research Intelligence", head=_AUTOCOMPLETE_GATE_HEAD) as demo:
 
     with gr.Tabs():
 
@@ -459,9 +485,6 @@ with gr.Blocks(title="Candle-Fire — ALS Research Intelligence") as demo:
     )
     msg_box.submit(**submit_kwargs)
     send_btn.click(**submit_kwargs)
-
-    # Gate the combobox autocomplete lists to open only after MIN_AUTOCOMPLETE_CHARS.
-    demo.load(js=_AUTOCOMPLETE_GATE_JS)
 
 
 if __name__ == "__main__":
