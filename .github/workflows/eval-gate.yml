@@ -1,0 +1,25 @@
+name: eval-gate
+
+# Tier-1 red/green eval gate (offline suite): normalization alias-collapse,
+# therapy-landscape gold, and gold-file schema. Deterministic, no runtime data,
+# no LLM, no network — so it needs no project dependencies and runs in seconds.
+#
+# The data suite (retrieval recall / KG expansion / citation existence) needs the
+# ChromaDB index + graph pickle, which are gitignored runtime assets. It runs as a
+# deploy gate before `git push hf main`, not here — see README "Deploy to Hugging Face".
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run offline eval gate
+        run: python -m evals.runner --suite offline
