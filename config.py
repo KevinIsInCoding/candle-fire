@@ -3,6 +3,9 @@ from pathlib import Path
 # Models
 SYNTHESIS_MODEL = "claude-sonnet-4-6"
 EXTRACTION_MODEL = "claude-haiku-4-5-20251001"
+# Tier-2 eval judge — deliberately a different, stronger model than SYNTHESIS_MODEL
+# so we don't grade the answer with the model that wrote it (self-preference bias).
+JUDGE_MODEL = "claude-opus-4-8"
 
 # External API endpoints
 CTGOV_BASE = "https://clinicaltrials.gov/api/v2/studies"

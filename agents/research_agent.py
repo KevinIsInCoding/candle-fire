@@ -138,6 +138,10 @@ def stream_research_agent(
                 if tool_call["name"] == "search_research_landscape":
                     result = _handle_search(tool_call["input"], collection, trials, _graph)
                     is_error = False
+                    # Surface the retrieved evidence to any caller that wants it (the
+                    # Tier-2 eval judge captures this). The UI ignores unknown event
+                    # types, so this is backward-compatible.
+                    yield ("evidence", json.dumps(result))
                 elif tool_call["name"] == "find_trials_by_location":
                     result = _handle_trials_by_location(tool_call["input"], trials, collection, _graph)
                     is_error = False

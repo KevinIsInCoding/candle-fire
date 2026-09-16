@@ -1,0 +1,47 @@
+name: eval-tier2-judge
+
+# Tier-2 LLM-as-judge suite: groundedness, attribution precision/recall, answer
+# relevance (+ abstention/completeness when the gold set has them). It runs the real
+# research agent and a pinned judge model, so it needs runtime data AND an API key,
+# is non-deterministic, and costs tokens. It therefore runs NIGHTLY (and on demand) —
+# never on PRs, and it never blocks a merge. A red run is an alert to investigate a
+# quality drop, not a gate.
+#
+# Requires repo secrets: ANTHROPIC_API_KEY (judge + synthesis), and HF_TOKEN if the
+# candle-fire-data dataset repo is private.
+
+on:
+  schedule:
+    - cron: "0 7 * * *"   # 07:00 UTC nightly
+  workflow_dispatch:
+
+concurrency:
+  group: eval-tier2
+  cancel-in-progress: true
+
+jobs:
+  judge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: uv sync
+      - name: Fetch runtime data (chroma + graph + trials) from the HF dataset repo
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: uv run python -c "import app"   # app._ensure_data() downloads on import
+      - name: Run Tier-2 judge suite
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: uv run python -m evals.runner --suite judge
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tier2-report
+          path: evals/report/latest.json
