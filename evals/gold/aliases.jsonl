@@ -1,0 +1,14 @@
+{"group": "TARDBP", "entity_type": "Gene", "canonical_id": "gene:TARDBP", "surface_forms": ["TARDBP", "TDP-43", "TDP43", "tdp-43", "tdp43", "TAR DNA-binding protein 43", "TAR DNA binding protein 43"]}
+{"group": "FUS", "entity_type": "Gene", "canonical_id": "gene:FUS", "surface_forms": ["FUS", "FUS/TLS", "TLS", "TLS/FUS", "fus", "fused in sarcoma"]}
+{"group": "C9orf72", "entity_type": "Gene", "canonical_id": "gene:C9orf72", "surface_forms": ["C9orf72", "C9ORF72", "c9orf72", "C9", "chromosome 9 open reading frame 72"]}
+{"group": "SOD1", "entity_type": "Gene", "canonical_id": "gene:SOD1", "surface_forms": ["SOD1", "SOD-1", "sod1", "superoxide dismutase 1", "Cu/Zn-superoxide dismutase", "copper-zinc superoxide dismutase"]}
+{"group": "ATXN2", "entity_type": "Gene", "canonical_id": "gene:ATXN2", "surface_forms": ["ATXN2", "ataxin-2", "ataxin 2", "SCA2"]}
+{"group": "UBQLN2", "entity_type": "Gene", "canonical_id": "gene:UBQLN2", "surface_forms": ["UBQLN2", "ubiquilin-2", "ubiquilin2", "ubiquilin 2"]}
+{"group": "SQSTM1", "entity_type": "Gene", "canonical_id": "gene:SQSTM1", "surface_forms": ["SQSTM1", "p62", "sequestosome-1", "sequestosome 1"]}
+{"group": "tofersen", "entity_type": "Compound", "canonical_id": "compound:tofersen", "surface_forms": ["tofersen", "Tofersen", "BIIB067", "biib067"]}
+{"group": "edaravone", "entity_type": "Compound", "canonical_id": "compound:edaravone", "surface_forms": ["edaravone", "Edaravone", "MCI-186"]}
+{"group": "AMX0035", "entity_type": "Compound", "canonical_id": "compound:AMX0035", "surface_forms": ["AMX0035", "amx0035", "sodium phenylbutyrate", "tauroursodeoxycholic acid", "TUDCA"]}
+{"group": "masitinib", "entity_type": "Compound", "canonical_id": "compound:masitinib", "surface_forms": ["masitinib", "Masitinib", "AB1010"]}
+{"group": "oxidative_stress", "entity_type": "Mechanism", "canonical_id": "mechanism:oxidative_stress", "surface_forms": ["oxidative stress", "reactive oxygen species", "ROS"]}
+{"group": "neuroinflammation", "entity_type": "Mechanism", "canonical_id": "mechanism:neuroinflammation", "surface_forms": ["neuroinflammation", "microglial activation", "astrocyte activation"]}
+{"group": "protein_aggregation", "entity_type": "Mechanism", "canonical_id": "mechanism:protein_aggregation", "surface_forms": ["protein aggregation", "protein misfolding", "protein inclusions"]}

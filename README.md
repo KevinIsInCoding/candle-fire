@@ -93,15 +93,26 @@ The large data is gitignored (see `.gitignore`) and never travels with the code.
 # 0. Merge the approved PR into main and sync locally
 git checkout main && git pull origin main
 
-# 1. Push runtime data to the dataset repo (REQUIRED before the code push)
+# 1. Data eval gate (REQUIRED — blocks deploy if red). Runs the Tier-1 data suite
+#    (citation existence, KG-expansion recall, retrieval recall@k) against the local
+#    ChromaDB index + graph you're about to ship. Must be green before you upload.
+uv run python -m evals.runner --suite data
+
+# 2. Push runtime data to the dataset repo (REQUIRED before the code push)
 #    Needs a HF token with write access: `huggingface-cli login` or HF_TOKEN env var.
 uv run python scripts/upload_data.py            # uploads chroma/, graph, trials.jsonl
 uv run python scripts/upload_data.py --dry-run  # preview targets + sizes, no writes
 uv run python scripts/upload_data.py --only trials   # push just one target
 
-# 2. Deploy the code (triggers the Space rebuild)
+# 3. Deploy the code (triggers the Space rebuild)
 git push hf main
 ```
+
+> **Two eval gates, two surfaces.** The **offline** suite (normalization, landscape
+> gold, gold schema) runs automatically on every PR via `.github/workflows/eval-gate.yml`
+> — it needs no runtime data. The **data** suite runs here, at deploy, because it
+> scores the actual ChromaDB + graph you're shipping, which are gitignored and never
+> travel with the code. Run it against the same local data you upload in step 2.
 
 > **Why data first:** the Space cold-starts on rebuild and immediately fetches data from the
 > dataset repo. If you push code before uploading data, the Space can boot against stale or

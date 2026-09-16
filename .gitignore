@@ -32,3 +32,6 @@ logs/
 
 # UI verification artifacts (screenshots, smoke logs)
 docs/ui-mocks/
+
+# Eval gate reports (regenerated on every run)
+evals/report/
