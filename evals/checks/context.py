@@ -10,7 +10,9 @@ import json
 from dataclasses import dataclass
 from functools import cached_property
 
-from config import CHROMA_COLLECTION, CHROMA_DIR, GRAPH_PICKLE_PATH
+import json as _json
+
+from config import CHROMA_COLLECTION, CHROMA_DIR, GRAPH_PICKLE_PATH, TRIALS_PATH
 from evals import thresholds as T
 
 
@@ -36,3 +38,10 @@ class DataContext:
     def collection(self):
         from rag.indexer import load_collection
         return load_collection(CHROMA_DIR, CHROMA_COLLECTION)
+
+    @cached_property
+    def trials(self) -> list[dict]:
+        """ALS trial records — needed by the research agent in the Tier-2 judge suite."""
+        if not TRIALS_PATH.exists():
+            return []
+        return [_json.loads(l) for l in TRIALS_PATH.read_text().splitlines() if l.strip()]

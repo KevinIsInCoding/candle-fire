@@ -2,11 +2,16 @@
 
     uv run python -m evals.runner --suite offline   # PR CI (no data, no LLM)
     uv run python -m evals.runner --suite data      # deploy gate (needs chroma+graph)
-    uv run python -m evals.runner --suite all       # both
+    uv run python -m evals.runner --suite all       # offline + data (the red/green gate)
+    uv run python -m evals.runner --suite judge     # Tier-2 LLM judge (nightly; needs data + API key)
 
 Exit 0 = green (all non-skipped checks pass). Exit 1 = red (any check failed, or a
 data check couldn't find its runtime assets when the data suite was requested).
 Writes a JSON report to evals/report/latest.json for trend tracking.
+
+`all` is the deterministic gate (offline + data); the `judge` suite is separate and
+never part of `all` — it is non-deterministic and costs tokens, so it runs on its own
+nightly schedule and never blocks a PR.
 """
 from __future__ import annotations
 
@@ -53,6 +58,18 @@ def _run_data() -> list[CheckResult]:
     return [citations.run(ctx), kg_expansion.run(ctx), retrieval.run(ctx)]
 
 
+def _run_judge() -> list[CheckResult]:
+    from evals.checks import synthesis
+    from evals.checks.context import DataContext, data_assets_present, load_questions
+
+    if not data_assets_present():
+        return [CheckResult("data-assets", "data", "fail",
+                            "ChromaDB index / graph pickle not found locally — "
+                            "fetch runtime data before the judge suite")]
+    ctx = DataContext(questions=load_questions())
+    return synthesis.run(ctx)
+
+
 def _print(results: list[CheckResult]) -> None:
     print(f"\n{_BOLD}Candle-Fire eval gate{_RST}  (commit {_git_sha()})\n")
     for r in results:
@@ -76,7 +93,7 @@ def _write_report(results: list[CheckResult], suite: str) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Candle-Fire Tier-1 eval gate")
-    ap.add_argument("--suite", choices=["offline", "data", "all"], default="all")
+    ap.add_argument("--suite", choices=["offline", "data", "all", "judge"], default="all")
     args = ap.parse_args()
 
     results: list[CheckResult] = []
@@ -84,6 +101,8 @@ def main() -> int:
         results += _run_offline()
     if args.suite in ("data", "all"):
         results += _run_data()
+    if args.suite == "judge":
+        results += _run_judge()
 
     _print(results)
     _write_report(results, args.suite)
