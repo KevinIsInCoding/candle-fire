@@ -115,5 +115,9 @@ on-demand; ~$25–35 with a 1-yr Savings Plan.
       (HF token was never needed.)
 - [ ] Point the HuggingFace deploy flow at `main-aws` (or retire it — Stage 1
       moves off HuggingFace).
-- [ ] Optional: weekly EBS snapshot schedule; a billing budget/alert.
+- [x] **Weekly EBS snapshots** — DLM policy `policy-032cf74642be1c082` (role
+      `AWSDataLifecycleManagerDefaultRole`), targets volumes tagged
+      `Backup=candle-fire`; Sundays 05:00 UTC, keeps 4.
+- [x] **Billing alert** — Budget `candle-fire-monthly` ($75/mo), emails
+      `lkchen1128@gmail.com` at 80% actual and 100% forecasted.
 - [ ] Stage 2 (Bedrock/HIPAA) and Stage 3 (self-hosted GPU) remain deferred.
