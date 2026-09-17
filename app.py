@@ -252,6 +252,29 @@ _US_STATES = ["All"] + sorted(set(trials_query._STATE_ABBREV.values()))
 _LOC_INDEX = trials_query.build_location_index(_trials)
 _LOC_CHOICES = trials_query.location_choices(_LOC_INDEX)
 
+
+def _warm_trial_cache() -> None:
+    """Prewarm the per-trial supporting-papers cache in the background so Clinical
+    Trials searches don't pay the CPU-bound ChromaDB lookup in the request path.
+    Runs after launch; searches that arrive before it finishes just fill the cache
+    themselves."""
+    if _collection is None:
+        return
+    import time as _time
+    start = _time.time()
+    for _rec in _trials:
+        try:
+            trials_query._find_supporting_papers(_rec, _collection)
+        except Exception:
+            pass
+    _logger.info("Trial supporting-papers cache warmed: %d trials in %.0fs",
+                 len(_trials), _time.time() - start)
+
+
+if not _SMOKE and _collection is not None:
+    import threading
+    threading.Thread(target=_warm_trial_cache, daemon=True).start()
+
 # Combobox behavior that Gradio can't express natively, wired in JS:
 #   - an in-box placeholder hint (gr.Dropdown has no `placeholder` param), and
 #   - hiding the attached option list until MIN_AUTOCOMPLETE_CHARS (a `.ac-hide` class the

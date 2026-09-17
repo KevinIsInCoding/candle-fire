@@ -214,6 +214,13 @@ def location_choices(index: dict) -> dict[str, list[str]]:
     }
 
 
+# Per-trial supporting-papers cache. The result depends only on the trial's static
+# target_entities/title and the static corpus, so it's deterministic — compute the
+# ChromaDB lookup once per NCT id and reuse across every search (and prewarm at
+# startup). This is the dominant per-trial cost of a Clinical Trials search.
+_SUPPORTING_PAPERS_CACHE: dict[str, list[dict]] = {}
+
+
 def _find_supporting_papers(
     trial: dict,
     collection: "chromadb.Collection | None",
@@ -222,6 +229,10 @@ def _find_supporting_papers(
     """Retrieve the top research papers relevant to this trial's compound/target."""
     if collection is None or collection.count() == 0:
         return []
+
+    nct = trial.get("nct_id", "")
+    if nct and nct in _SUPPORTING_PAPERS_CACHE:
+        return _SUPPORTING_PAPERS_CACHE[nct]
 
     from rag import retriever as rag_retriever
 
@@ -235,7 +246,7 @@ def _find_supporting_papers(
         results = rag_retriever.search(collection, query) if query else []
 
     results = rag_retriever.apply_citation_boost(results)
-    return [
+    papers = [
         {
             "pmid": r["pmid"],
             "title": r["title"],
@@ -244,6 +255,9 @@ def _find_supporting_papers(
         }
         for r in results[:top_n]
     ]
+    if nct:
+        _SUPPORTING_PAPERS_CACHE[nct] = papers
+    return papers
 
 
 def _find_sibling_trials(
