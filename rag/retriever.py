@@ -57,14 +57,18 @@ def search_by_entities(
     if not entity_names or collection.count() == 0:
         return []
 
+    # One batched query for all entities → a single BioLORD forward pass instead of
+    # N sequential embeds (the dominant retrieval cost on CPU). Results are identical
+    # to querying each entity separately; ChromaDB returns one result row per query.
+    entities = entity_names[:RETRIEVAL_ENTITY_QUERY_CAP]
+    raw = collection.query(
+        query_texts=entities,
+        n_results=min(10, collection.count()),
+        include=["documents", "metadatas", "distances"],
+    )
     seen: dict[str, dict] = {}
-    for entity in entity_names[:RETRIEVAL_ENTITY_QUERY_CAP]:
-        raw = collection.query(
-            query_texts=[entity],
-            n_results=min(10, collection.count()),
-            include=["documents", "metadatas", "distances"],
-        )
-        for r in _parse_raw(raw):
+    for i in range(len(entities)):
+        for r in _parse_raw(raw, i):
             pmid = r["pmid"]
             if pmid not in seen or r["similarity"] > seen[pmid]["similarity"]:
                 seen[pmid] = r
@@ -323,12 +327,19 @@ def get_paper(collection: chromadb.Collection, pmid: str) -> dict | None:
     }
 
 
-def _parse_raw(raw: dict) -> list[dict]:
-    """Flatten a ChromaDB query response into a list of result dicts."""
-    ids = raw.get("ids", [[]])[0]
-    docs = raw.get("documents", [[]])[0]
-    metas = raw.get("metadatas", [[]])[0]
-    distances = raw.get("distances", [[]])[0]
+def _parse_raw(raw: dict, idx: int = 0) -> list[dict]:
+    """Flatten one query's slice of a ChromaDB response into result dicts.
+
+    `idx` selects which query's results to read (ChromaDB returns one row per
+    query text), so a single batched multi-query call can be parsed per-query.
+    """
+    def _row(key):
+        rows = raw.get(key, [[]])
+        return rows[idx] if idx < len(rows) else []
+    ids = _row("ids")
+    docs = _row("documents")
+    metas = _row("metadatas")
+    distances = _row("distances")
 
     results = []
     for chunk_id, doc, meta, dist in zip(ids, docs, metas, distances):
