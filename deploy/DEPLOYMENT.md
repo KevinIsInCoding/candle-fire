@@ -111,13 +111,40 @@ on-demand; ~$25–35 with a 1-yr Savings Plan.
 
 ## Outstanding / follow-ups
 - [ ] **Rotate the Anthropic key** — it was pasted in a chat transcript during
-      deploy. Create a new key in the Anthropic console, update `.env`, restart.
-      (HF token was never needed.)
-- [ ] Point the HuggingFace deploy flow at `main-aws` (or retire it — Stage 1
-      moves off HuggingFace).
+      deploy. It is no longer on the box (runtime uses Bedrock via IAM), but
+      rotate it anyway since it was exposed (still used for local dev / offline
+      pipeline). (HF token was never needed.)
+- [ ] Point the HuggingFace deploy flow at `main-aws` (or retire it).
 - [x] **Weekly EBS snapshots** — DLM policy `policy-032cf74642be1c082` (role
       `AWSDataLifecycleManagerDefaultRole`), targets volumes tagged
       `Backup=candle-fire`; Sundays 05:00 UTC, keeps 4.
 - [x] **Billing alert** — Budget `candle-fire-monthly` ($75/mo), emails
       `lkchen1128@gmail.com` at 80% actual and 100% forecasted.
-- [ ] Stage 2 (Bedrock/HIPAA) and Stage 3 (self-hosted GPU) remain deferred.
+- [ ] Stage 3 (self-hosted GPU) remains deferred.
+
+---
+
+# Stage 2 — HIPAA technical controls (2026-09-17)
+
+Runtime LLM path moved from the direct Anthropic API to **Amazon Bedrock** under
+the AWS BAA, plus encryption at rest and audit logging. HIPAA is a whole-stack
+legal + organizational property — these are the **technical safeguards**; the BAA
+(signed), risk assessment, and workforce policies are the org's responsibility.
+
+| Control | Implementation |
+|---|---|
+| **LLM via Bedrock** | `LLM_PROVIDER=bedrock` → `AnthropicBedrock` (legacy InvokeModel path; the Mantle endpoint 404s — no Bedrock "project" in this account) driving inference profile `us.anthropic.claude-sonnet-4-6`. Same model, same `messages.stream()` + tool-use surface — research agent unchanged. Verified: plain + tool-use streaming both work. |
+| **IAM auth (no key)** | EC2 instance role `candle-fire-bedrock`, inline policy `bedrock:InvokeModel*` on the sonnet-4-6 model + inference-profile ARNs only. The Anthropic API key is **removed** from the box `.env`. |
+| **Bedrock model access** | Anthropic use-case form submitted + Claude Sonnet 4.6 access granted (account-level, required by AWS). |
+| **Encryption at rest** | Root volume re-encrypted (`vol-01233f6756cf013b4`, KMS `alias/aws/ebs`); region **default EBS encryption ON**; old unencrypted volume deleted. |
+| **Encryption in transit** | Caddy TLS (Stage 1). |
+| **Audit logging** | CloudTrail `candle-fire-trail` (multi-region, log-file validation) → encrypted, versioned, private S3 `candle-fire-cloudtrail-046451670096`. |
+| **PHI-free app logs** | App does not log query text (verified). |
+| **AWS BAA** | Signed (account owner). |
+
+Offline pipeline (extraction, landscape) stays on the direct Anthropic API —
+build-time, no PHI. Bedrock has no Batches API anyway.
+
+**Not HIPAA (organizational, out of scope of this repo):** risk assessment,
+policies & procedures, workforce training, incident-response plan, access
+reviews, and a formal BAA inventory. Technical controls ≠ full compliance.
