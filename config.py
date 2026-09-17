@@ -1,7 +1,18 @@
+import os
 from pathlib import Path
 
-# Models
-SYNTHESIS_MODEL = "claude-sonnet-4-6"
+# Runtime LLM provider: "anthropic" (direct API) or "bedrock" (HIPAA path via
+# Amazon Bedrock under the AWS BAA). Set per-environment (the EC2 box uses bedrock).
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
+
+# Models — synthesis model differs by provider: Bedrock needs the `anthropic.`-
+# prefixed cross-region inference profile ID (auto US-region failover); the direct
+# API uses the bare ID. Same underlying model either way.
+_SYNTHESIS_MODEL_ANTHROPIC = "claude-sonnet-4-6"
+_SYNTHESIS_MODEL_BEDROCK = "us.anthropic.claude-sonnet-4-6"
+SYNTHESIS_MODEL = (
+    _SYNTHESIS_MODEL_BEDROCK if LLM_PROVIDER == "bedrock" else _SYNTHESIS_MODEL_ANTHROPIC
+)
 EXTRACTION_MODEL = "claude-haiku-4-5-20251001"
 # Tier-2 eval judge — deliberately a different, stronger model than SYNTHESIS_MODEL
 # so we don't grade the answer with the model that wrote it (self-preference bias).

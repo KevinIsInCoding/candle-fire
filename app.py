@@ -109,7 +109,20 @@ if not _SMOKE:
 _collection = None if _SMOKE else _load_collection()
 _graph = None if _SMOKE else _load_graph()
 _trials = _load_trials()
-_client = None if _SMOKE else anthropic.Anthropic()
+def _make_llm_client():
+    """Runtime LLM client. LLM_PROVIDER=bedrock → Amazon Bedrock (HIPAA path,
+    IAM auth via the instance role); otherwise the direct Anthropic API. Both
+    expose the same messages.stream() surface used by the research agent."""
+    provider = os.getenv("LLM_PROVIDER", "anthropic")
+    if provider == "bedrock":
+        from anthropic import AnthropicBedrockMantle
+        client = AnthropicBedrockMantle(aws_region=os.getenv("AWS_REGION", "us-east-1"))
+        _logger.info("LLM client: Amazon Bedrock (Mantle) in %s", os.getenv("AWS_REGION", "us-east-1"))
+        return client
+    return anthropic.Anthropic()
+
+
+_client = None if _SMOKE else _make_llm_client()
 
 _n_chunks = _collection.count() if _collection else 0
 # Headline trial count = recruiting, interventional trials only (the actionable set), not the
