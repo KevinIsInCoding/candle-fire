@@ -1,0 +1,8 @@
+# Caddy reverse proxy for candle-fire.
+# {{DOMAIN}} is substituted by bootstrap.sh (e.g. candle-fire.example.com).
+# Caddy auto-provisions and renews a Let's Encrypt cert for this hostname,
+# terminates TLS on :443, redirects :80 -> :443, and proxies to Gradio on
+# localhost. Gradio's streaming (SSE) and websockets pass through transparently.
+{{DOMAIN}} {
+	reverse_proxy 127.0.0.1:7860
+}

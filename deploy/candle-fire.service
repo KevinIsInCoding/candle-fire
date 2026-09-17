@@ -1,0 +1,21 @@
+[Unit]
+Description=Candle-Fire (Gradio) — ALS research intelligence
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=candle
+Group=candle
+WorkingDirectory=/opt/candle-fire
+EnvironmentFile=/opt/candle-fire/.env
+# uv run resolves the project venv; app.py's __main__ calls demo.launch().
+ExecStart=/usr/local/bin/uv run python app.py
+Restart=always
+RestartSec=5
+# First boot pulls ~1.4 GB of data from the HF dataset repo to EBS before the
+# port opens; give it room. Subsequent restarts are fast (data already on disk).
+TimeoutStartSec=1200
+
+[Install]
+WantedBy=multi-user.target
