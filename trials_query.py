@@ -297,8 +297,12 @@ def _primary_class(therapy: dict) -> str:
 
 
 @lru_cache(maxsize=1)
+@lru_cache(maxsize=1)
 def _mechanism_index() -> dict[str, str]:
     """Map NCT ID → targeted-mechanism class name, reverse-indexed from landscape.json.
+
+    Cached: landscape.json is static at runtime, so parse it once — not once per
+    enriched trial (was 25× disk-read + JSON-parse per Clinical Trials search).
 
     Classified compounds take precedence over unclassified ones; compounds with no
     mechanism are skipped. Returns {} when the landscape artifact is absent.

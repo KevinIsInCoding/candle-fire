@@ -4,6 +4,7 @@ from __future__ import annotations
 import html
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import anthropic
@@ -169,7 +170,7 @@ def respond(message: str, history: list[dict]):
         return
 
     history = history + [{"role": "user", "content": message}]
-    history = history + [{"role": "assistant", "content": ""}]
+    history = history + [{"role": "assistant", "content": "*Analyzing your question...*"}]
     yield history, gr.update(value="", interactive=False)
 
     response_text = ""
@@ -324,10 +325,16 @@ def _search_trials(facility: str, state: str, city: str, study_type: str, status
                 '</div>'
             )
 
-    enriched = [
-        trials_query.enrich_trial(t, _collection, _graph, _trials)
-        for t in matches[:_TRIAL_ENRICH_CAP]
-    ]
+    # Enrich concurrently: each trial does an independent ChromaDB lookup, so a small
+    # thread pool cuts the wall time roughly in half on the 2-vCPU box. Build the
+    # mechanism index once (it's cached anyway) and pass it in. ex.map preserves order.
+    to_enrich = matches[:_TRIAL_ENRICH_CAP]
+    mech_index = trials_query._mechanism_index()
+    with ThreadPoolExecutor(max_workers=4) as ex:
+        enriched = list(ex.map(
+            lambda t: trials_query.enrich_trial(t, _collection, _graph, _trials, mechanism_index=mech_index),
+            to_enrich,
+        ))
     return trials_query.render_trials_html(enriched, len(matches))
 
 

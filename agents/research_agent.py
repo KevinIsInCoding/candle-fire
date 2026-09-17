@@ -72,6 +72,11 @@ def stream_research_agent(
     _graph = graph
     first_turn = True
 
+    # Immediate feedback: the first LLM round-trip (tool decision) can take several
+    # seconds before any token or the "searching" status, leaving the chat bubble
+    # blank. Emit a status right away so the UI never looks frozen.
+    yield ("status", "Analyzing your question and expanding entities...")
+
     while True:
         stream_text = ""
 
