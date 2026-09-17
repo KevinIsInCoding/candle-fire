@@ -47,6 +47,7 @@ public HuggingFace dataset on first boot and it then persists on EBS.
 `UPSERT` A records in hosted zone `Z03758543IOFY1T6M2GH3`, all → `18.205.4.172` (TTL 300):
 - `candle-fire.candlefireai.org` (the app)
 - `candlefireai.org` and `www.candlefireai.org` (redirect to the app subdomain)
+- `*.candlefireai.org` (wildcard — any future app subdomain, e.g. `beacon`, resolves with no new record)
 
 ```bash
 aws route53 change-resource-record-sets --hosted-zone-id Z03758543IOFY1T6M2GH3 \
