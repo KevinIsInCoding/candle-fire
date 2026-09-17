@@ -115,9 +115,13 @@ def _make_llm_client():
     expose the same messages.stream() surface used by the research agent."""
     provider = os.getenv("LLM_PROVIDER", "anthropic")
     if provider == "bedrock":
-        from anthropic import AnthropicBedrockMantle
-        client = AnthropicBedrockMantle(aws_region=os.getenv("AWS_REGION", "us-east-1"))
-        _logger.info("LLM client: Amazon Bedrock (Mantle) in %s", os.getenv("AWS_REGION", "us-east-1"))
+        # Legacy bedrock-runtime InvokeModel path (bedrock:InvokeModel*), driving
+        # the us.anthropic.claude-sonnet-4-6 cross-region inference profile. The
+        # newer Mantle endpoint needs a Bedrock "project" this account doesn't have.
+        from anthropic import AnthropicBedrock
+        region = os.getenv("AWS_REGION", "us-east-1")
+        client = AnthropicBedrock(aws_region=region)
+        _logger.info("LLM client: Amazon Bedrock in %s", region)
         return client
     return anthropic.Anthropic()
 
