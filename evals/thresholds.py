@@ -42,3 +42,14 @@ RETRIEVAL_MIN_RECALL_AT_K = 0.70
 # Every reference/citation PMID in the gold set must exist in the corpus.
 # Zero tolerance — a cited PMID the corpus can't produce is a fabrication risk.
 CITATION_MIN_VALIDITY = 1.0
+
+# ── Tier-2 LLM judge (non-blocking, nightly) ──────────────────────────────────
+# These are ALERT thresholds, not PR gates: the judge is non-deterministic and
+# costs tokens, so it never runs in PR CI. A nightly run below these turns red to
+# notify, but no PR is ever blocked. Re-baseline once the judge is calibrated
+# against SME grades (see docs/eval-plan.md §7 judge calibration).
+JUDGE_MIN_GROUNDEDNESS = 0.90
+JUDGE_MIN_ATTRIBUTION_PRECISION = 0.90
+JUDGE_MIN_ATTRIBUTION_RECALL = 0.80
+JUDGE_MIN_ANSWER_RELEVANCE = 0.80
+# Abstention + completeness are reported for trend only (no gate yet).
