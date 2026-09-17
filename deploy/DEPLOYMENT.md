@@ -1,6 +1,11 @@
 # Stage 1 deployment record — candle-fire on EC2
 
-**Deployed:** 2026-09-17 · **URL:** https://candlefireai.org · **Status:** live
+**Deployed:** 2026-09-17 · **URL:** https://candle-fire.candlefireai.org · **Status:** live
+
+Apps are served on **per-app subdomains** (chosen over path-prefixes: Gradio
+streams SSE/websockets, which are fragile under a sub-path). `candlefireai.org`
+and `www` redirect to the app subdomain; future `beacon` gets its own
+`beacon.candlefireai.org`.
 
 This is the record of the actual Stage 1 lift-and-shift (single CPU EC2 box, no
 Docker, direct Anthropic API). For the rationale see
@@ -30,7 +35,8 @@ public HuggingFace dataset on first boot and it then persists on EBS.
 | Instance | Ubuntu 26.04 LTS, `aarch64` (Graviton, `t4g`-class) |
 | Elastic IP | 18.205.4.172 |
 | Root disk | 30 GiB gp3 |
-| Domain / DNS | `candlefireai.org`, managed in Route 53 (zone `Z03758543IOFY1T6M2GH3`) |
+| App URL | `candle-fire.candlefireai.org` (root + `www` redirect here) |
+| Domain / DNS | Route 53 zone `Z03758543IOFY1T6M2GH3`; A records: `candle-fire`, `@`, `www` → EIP |
 | Security group | 443 + 80 from `0.0.0.0/0`; 22 from admin IP; 7860 closed |
 | SSH | `ssh -i ~/.ssh/candle-fire.pem ubuntu@18.205.4.172` (alias `cf-ssh`) |
 | Deploy branch | `main-aws` (GitHub default branch) |
@@ -38,9 +44,9 @@ public HuggingFace dataset on first boot and it then persists on EBS.
 ## What was done
 
 ### Step 5 — DNS (Route 53, via awscli)
-Two `UPSERT` A records created in hosted zone `Z03758543IOFY1T6M2GH3`:
-- `candlefireai.org` → `18.205.4.172` (TTL 300)
-- `www.candlefireai.org` → `18.205.4.172` (TTL 300)
+`UPSERT` A records in hosted zone `Z03758543IOFY1T6M2GH3`, all → `18.205.4.172` (TTL 300):
+- `candle-fire.candlefireai.org` (the app)
+- `candlefireai.org` and `www.candlefireai.org` (redirect to the app subdomain)
 
 ```bash
 aws route53 change-resource-record-sets --hosted-zone-id Z03758543IOFY1T6M2GH3 \
@@ -74,7 +80,8 @@ First boot downloaded the corpus from the public HF dataset to EBS
 
 ## Verification (all green)
 - App: `curl -I http://127.0.0.1:7860` → 200; KG loaded 37,520 nodes / 22,575 edges.
-- Public: `https://candlefireai.org` → 200; valid Let's Encrypt cert; `http` → 308 → `https`.
+- Public: `https://candle-fire.candlefireai.org` → 200; valid Let's Encrypt cert; `http` → HTTPS.
+- Redirect: `candlefireai.org` and `www` → 302 → `https://candle-fire.candlefireai.org`.
 - LLM: Anthropic key validated (HTTP 200 against `/v1/messages`).
 
 ## Operations

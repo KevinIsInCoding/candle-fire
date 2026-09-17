@@ -1,8 +1,17 @@
-# Caddy reverse proxy for candle-fire.
-# {{DOMAIN}} is substituted by bootstrap.sh (e.g. candle-fire.example.com).
-# Caddy auto-provisions and renews a Let's Encrypt cert for this hostname,
-# terminates TLS on :443, redirects :80 -> :443, and proxies to Gradio on
-# localhost. Gradio's streaming (SSE) and websockets pass through transparently.
-{{DOMAIN}} {
+# Caddy config for candlefireai.org. {{DOMAIN}} is substituted by bootstrap.sh.
+#
+# Subdomain-per-app layout (chosen over path-prefixes because Gradio streams
+# SSE/websockets, which are fragile under a sub-path). Each app is served at the
+# root of its own subdomain — no GRADIO_ROOT_PATH, no prefix stripping — and Caddy
+# auto-provisions a Let's Encrypt cert per hostname.
+
+# candle-fire app.
+candle-fire.{{DOMAIN}} {
 	reverse_proxy 127.0.0.1:7860
+}
+
+# Bare domain + www redirect to the app subdomain.
+# (When beacon lands, add:  beacon.{{DOMAIN}} { reverse_proxy 127.0.0.1:<port> }  )
+{{DOMAIN}}, www.{{DOMAIN}} {
+	redir https://candle-fire.{{DOMAIN}}{uri}
 }

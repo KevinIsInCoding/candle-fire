@@ -51,15 +51,21 @@ EC2 → **Elastic IPs** → *Allocate* → then *Actions → Associate* → to t
 `candle-fire` instance. Note the IP — call it `ELASTIC_IP`.
 
 ## 5. DNS
-In your registrar's DNS panel, add **A records** pointing at `ELASTIC_IP`:
+Apps are served on **per-app subdomains** (see `Caddyfile`). Add **A records**
+pointing at `ELASTIC_IP`:
 
-| Host | Type | Value |
-|---|---|---|
-| `@` (root → `candlefireai.org`) | A | `ELASTIC_IP` |
-| `www` (optional) | A | `ELASTIC_IP` |
+| Host | Type | Value | Purpose |
+|---|---|---|---|
+| `candle-fire` | A | `ELASTIC_IP` | the app: `candle-fire.candlefireai.org` |
+| `@` (root) | A | `ELASTIC_IP` | redirects to the app subdomain |
+| `www` | A | `ELASTIC_IP` | redirects to the app subdomain |
 
-Give it a minute: `dig +short candlefireai.org` should return `ELASTIC_IP`.
-DNS must resolve *before* the first HTTPS hit, or Caddy can't issue the cert.
+Tip: a single wildcard `*` A record → `ELASTIC_IP` covers every future app
+subdomain (e.g. `beacon`) without adding records each time.
+
+Give it a minute: `dig +short candle-fire.candlefireai.org` should return
+`ELASTIC_IP`. DNS must resolve *before* the first HTTPS hit, or Caddy can't
+issue the cert.
 
 ## 6. Deploy on the box
 ```bash
